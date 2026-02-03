@@ -72,12 +72,34 @@
         }
       ],
       "layoutWidth": "100%"
+    },
+    "pg1770096974637": {
+      "id": "pg1770096974637",
+      "title": "me tocaste",
+      "theme": "default",
+      "publishDate": "2026-02-03T05:36:14.637Z",
+      "blocks": [
+        {
+          "id": "b1770096992030",
+          "type": "image",
+          "content": "https://cdn-icons-png.freepik.com/512/1363/1363376.png",
+          "position": "relative",
+          "actionType": "none",
+          "actionResult": "discover",
+          "clueLink": "",
+          "options": {
+            "scale": 100
+          }
+        }
+      ],
+      "layoutWidth": "100%"
     }
   },
   "pageOrder": [
     "inicio",
     "pg1770092832902",
-    "pg1770092902680"
+    "pg1770092902680",
+    "pg1770096974637"
   ],
   "homePageId": "inicio"
 }
