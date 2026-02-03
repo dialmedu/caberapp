@@ -14,9 +14,11 @@
           "clueLink": "pg1770092832902",
           "options": {
             "scale": 100
-          }
+          },
+          "actionResult": "discover"
         }
-      ]
+      ],
+      "layoutWidth": "80%"
     },
     "pg1770092832902": {
       "id": "pg1770092832902",
@@ -29,12 +31,14 @@
           "type": "text",
           "content": "Tocame 3 veces",
           "actionType": "none",
-          "clueLink": "",
+          "clueLink": "pg1770092902680",
           "options": {
             "scale": 100
-          }
+          },
+          "actionResult": "navigate"
         }
-      ]
+      ],
+      "layoutWidth": "80%"
     },
     "pg1770092902680": {
       "id": "pg1770092902680",
@@ -52,7 +56,8 @@
             "scale": 100
           }
         }
-      ]
+      ],
+      "layoutWidth": "100%"
     }
   },
   "pageOrder": [
