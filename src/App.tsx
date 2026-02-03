@@ -1,12 +1,10 @@
-import React, { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { 
-  Plus, Trash2, Save, Download, Upload, EyeOff, 
-  Tv, Layers, Home, Monitor, Lock,
-  Share2, Menu, X, Palette, 
-  Sparkles, ChevronDown, ChevronUp
+  Plus, EyeOff, Layers, Home, Lock,
+  Share2, Menu, X, Palette, Sparkles
 } from 'lucide-react';
 
-// --- DEFINICIÓN DE TIPOS PARA TYPESCRIPT ---
+// --- DEFINICIÓN DE TIPOS ---
 interface Block {
   id: string;
   type: string;
@@ -29,7 +27,7 @@ interface Config {
   homePageId: string;
 }
 
-// --- CONFIGURACIÓN INICIAL ---
+// --- DATOS INICIALES ---
 const INITIAL_DATA: Config = {
   pages: {
     'home': {
@@ -77,7 +75,8 @@ const themeStyles = `
 
 export default function App() {
   const [config, setConfig] = useState<Config>(() => {
-    const saved = typeof window !== 'undefined' ? localStorage.getItem('enigma_cms_v2') : null;
+    if (typeof window === 'undefined') return INITIAL_DATA;
+    const saved = localStorage.getItem('enigma_cms_v3_safe');
     return saved ? JSON.parse(saved) : INITIAL_DATA;
   });
   const [currentPageId, setCurrentPageId] = useState(config.homePageId);
@@ -98,35 +97,34 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    localStorage.setItem('enigma_cms_v2', JSON.stringify(config));
+    localStorage.setItem('enigma_cms_v3_safe', JSON.stringify(config));
   }, [config]);
 
   const onFooterClick = () => {
     const n = devClicks + 1;
     setDevClicks(n);
-    if (n >= 5 && n < 10) setDevMsg(`Modo editor en ${10 - n}...`);
+    if (n >= 5 && n < 10) setDevMsg(`Activando editor en ${10 - n}...`);
     if (n >= 10) { setShowLogin(true); setDevClicks(0); setDevMsg(""); }
-    setTimeout(() => { setDevClicks(0); setDevMsg(""); }, 4000);
+    setTimeout(() => { setDevClicks(0); setDevMsg(""); }, 5000);
   };
 
   const handleLogin = () => {
     if (password === "Daniela") {
-      setIsDev(true);
-      setShowLogin(false);
-      setSidebarOpen(true);
-      setPassword("");
-    } else {
-      alert("Clave incorrecta");
-    }
+      setIsDev(true); setShowLogin(false); setSidebarOpen(true); setPassword("");
+    } else alert("Clave incorrecta");
   };
 
-  const addBlock = () => {
-    const id = 'b' + Date.now();
-    const pg = config.pages[currentPageId];
-    const newBlock: Block = { id, type: 'text', content: 'Nuevo fragmento...', actionType: 'none', clueLink: '', options: { scale: 100 } };
-    setConfig({ ...config, pages: { ...config.pages, [currentPageId]: { ...pg, blocks: [...pg.blocks, newBlock] } } });
-    setEditingId(id);
-    setActiveTab('blocks');
+  const addPage = () => {
+    const id = 'pg' + Date.now();
+    const newPage: Page = {
+      id,
+      title: 'Nueva Página',
+      theme: 'default',
+      publishDate: new Date().toISOString(),
+      blocks: []
+    };
+    setConfig(prev => ({ ...prev, pages: { ...prev.pages, [id]: newPage } }));
+    setCurrentPageId(id);
   };
 
   const currentPage = config.pages[currentPageId] || Object.values(config.pages)[0];
@@ -135,12 +133,12 @@ export default function App() {
     <div className={`flex h-screen w-full transition-colors duration-500 overflow-hidden ${isDev ? 'bg-zinc-900' : 'bg-slate-50'}`}>
       {showLogin && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/90 backdrop-blur-md p-6">
-          <div className="bg-zinc-900 border border-zinc-800 p-10 rounded-[3rem] w-full max-w-sm shadow-2xl text-center">
+          <div className="bg-zinc-900 border border-zinc-800 p-10 rounded-[3rem] w-full max-sm shadow-2xl text-center">
             <Lock className="mx-auto text-blue-500 mb-6" size={56} />
             <h2 className="text-white font-black uppercase tracking-widest mb-8">ACCESO</h2>
-            <input type="password" autoFocus value={password} onChange={e => setPassword(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleLogin()} className="w-full bg-zinc-800 border border-zinc-700 p-5 rounded-2xl text-white text-center text-3xl mb-6 outline-none focus:ring-4 focus:ring-blue-500/20" placeholder="••••" />
-            <button onClick={handleLogin} className="w-full bg-blue-600 p-5 rounded-2xl text-white font-black uppercase tracking-widest shadow-lg shadow-blue-900/40">IDENTIFICAR</button>
-            <button onClick={() => setShowLogin(false)} className="mt-6 text-zinc-500 text-sm">Cancelar</button>
+            <input type="password" autoFocus value={password} onChange={e => setPassword(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleLogin()} className="w-full bg-zinc-800 border border-zinc-700 p-5 rounded-2xl text-white text-center text-3xl mb-6 outline-none" placeholder="••••" />
+            <button onClick={handleLogin} className="w-full bg-blue-600 p-5 rounded-2xl text-white font-black uppercase tracking-widest shadow-lg">ENTRAR</button>
+            <button onClick={() => setShowLogin(false)} className="mt-6 text-zinc-500 text-sm">Cerrar</button>
           </div>
         </div>
       )}
@@ -152,9 +150,9 @@ export default function App() {
             <button onClick={() => setSidebarOpen(false)} className="text-zinc-500"><X size={20}/></button>
           </div>
           <div className="flex border-b border-zinc-900 shrink-0">
-            {['pages', 'style', 'blocks', 'system'].map(tab => (
-              <button key={tab} onClick={() => setActiveTab(tab)} className={`flex-1 py-4 flex flex-col items-center gap-1 transition-all ${activeTab === tab ? 'text-blue-400 bg-blue-400/5' : 'text-zinc-600'}`}>
-                {tab === 'pages' ? <Home size={16}/> : tab === 'style' ? <Palette size={16}/> : tab === 'blocks' ? <Layers size={16}/> : <Plus size={16}/>}
+            {['pages', 'design', 'blocks'].map(tab => (
+              <button key={tab} onClick={() => setActiveTab(tab)} className={`flex-1 py-4 flex flex-col items-center gap-1 ${activeTab === tab ? 'text-blue-400 bg-blue-400/5' : 'text-zinc-600'}`}>
+                {tab === 'pages' ? <Home size={16}/> : tab === 'design' ? <Palette size={16}/> : <Layers size={16}/>}
                 <span className="text-[9px] font-black uppercase tracking-tighter">{tab}</span>
               </button>
             ))}
@@ -162,24 +160,14 @@ export default function App() {
           <div className="flex-1 overflow-y-auto p-4 space-y-6">
             {activeTab === 'pages' && (
               <div className="space-y-4">
-                <div className="flex justify-between items-center"><h4 className="text-[10px] font-black uppercase text-zinc-600">Navegación</h4><button onClick={() => { const id='pg'+Date.now(); setConfig({...config, pages: {...config.pages, [id]: {id, title:'Nueva', theme:'default', blocks:[]}}}); setCurrentPageId(id); }} className="text-blue-500 p-1 rounded"><Plus size={18}/></button></div>
+                <div className="flex justify-between items-center"><h4 className="text-[10px] font-black uppercase text-zinc-600">Páginas</h4><button onClick={addPage} className="text-blue-500"><Plus size={18}/></button></div>
                 <div className="space-y-2">
                   {Object.values(config.pages).map((p: Page) => (
-                    <div key={p.id} onClick={() => setCurrentPageId(p.id)} className={`p-3 rounded-2xl flex items-center justify-between cursor-pointer border transition-all ${currentPageId === p.id ? 'bg-blue-600 border-blue-500 text-white' : 'bg-zinc-900 border-zinc-800 text-zinc-400'}`}>
+                    <div key={p.id} onClick={() => setCurrentPageId(p.id)} className={`p-3 rounded-2xl border flex items-center justify-between cursor-pointer transition-all ${currentPageId === p.id ? 'bg-blue-600 border-blue-500 text-white' : 'bg-zinc-900 border-zinc-800 text-zinc-400'}`}>
                       <span className="text-xs font-bold uppercase truncate pr-4">{p.title}</span>
                     </div>
                   ))}
                 </div>
-              </div>
-            )}
-            {activeTab === 'blocks' && (
-              <div className="space-y-4 pb-20">
-                <div className="flex justify-between items-center"><h4 className="text-[10px] font-black uppercase text-zinc-600">Bloques</h4><button onClick={addBlock} className="bg-blue-600 text-white p-1 rounded-lg"><Plus size={18}/></button></div>
-                {currentPage.blocks.map((b: Block) => (
-                  <div key={b.id} className={`bg-zinc-900 border rounded-2xl overflow-hidden ${editingId === b.id ? 'border-blue-500' : 'border-zinc-800'}`}>
-                    <div onClick={() => setEditingId(editingId === b.id ? null : b.id)} className="p-3 text-[9px] font-black uppercase text-zinc-500 cursor-pointer">{b.type}</div>
-                  </div>
-                ))}
               </div>
             )}
           </div>
@@ -189,12 +177,12 @@ export default function App() {
       <main className="flex-1 flex flex-col overflow-hidden relative">
         {isDev && (
           <div className="h-16 bg-white border-b border-zinc-200 flex items-center justify-between px-6 z-50">
-            <button onClick={() => setSidebarOpen(!sidebarOpen)} className="p-2.5 bg-zinc-100 rounded-2xl text-zinc-900 hover:bg-zinc-200 shadow-sm transition-all">{sidebarOpen ? <X size={20}/> : <Menu size={20}/>}</button>
-            <div className="text-[10px] font-black uppercase tracking-widest text-zinc-400">Modo Edición</div>
-            <button onClick={() => setIsDev(false)} className="px-5 py-2.5 bg-zinc-950 text-white rounded-2xl text-[10px] font-black uppercase"><EyeOff size={14} className="inline mr-2"/> Finalizar</button>
+            <button onClick={() => setSidebarOpen(!sidebarOpen)} className="p-2.5 bg-zinc-100 rounded-2xl text-zinc-900">{sidebarOpen ? <X size={20}/> : <Menu size={20}/>}</button>
+            <div className="text-[10px] font-black uppercase tracking-widest text-zinc-400">Preview Mode</div>
+            <button onClick={() => setIsDev(false)} className="px-5 py-2.5 bg-zinc-950 text-white rounded-2xl text-[10px] font-black uppercase shadow-xl"><EyeOff size={14} className="inline mr-2"/> Finalizar</button>
           </div>
         )}
-        <div className={`flex-1 overflow-y-auto scroll-smooth transition-all duration-700 ${isDev ? 'p-6 md:p-12' : 'p-0'}`}>
+        <div className={`flex-1 overflow-y-auto scroll-smooth transition-all ${isDev ? 'p-6 md:p-12' : 'p-0'}`}>
           <div className={`mx-auto transition-all duration-700 min-h-full ${isDev ? 'bg-white shadow-2xl rounded-[3.5rem] border-[14px] border-zinc-900 max-w-[420px] md:max-w-4xl relative overflow-hidden' : 'w-full'}`}>
              <PageRenderer page={currentPage} isDev={isDev} onNavigate={(id: string) => { setCurrentPageId(id); window.scrollTo(0,0); }} onFooterClick={onFooterClick} onSelectBlock={(id: string) => { setEditingId(id); setActiveTab('blocks'); setSidebarOpen(true); }} msg={devMsg} />
           </div>
@@ -211,7 +199,7 @@ function PageRenderer({ page, isDev, onNavigate, onFooterClick, onSelectBlock, m
     'retro-tv': "theme-tv p-8 md:p-24 flex flex-col items-center min-h-full relative overflow-hidden"
   };
   return (
-    <div className={`${themes[page.theme] || themes.default} w-full transition-all duration-1000`}>
+    <div className={`${themes[page.theme] || themes.default} w-full transition-all duration-1000 select-none`}>
       {page.theme === 'retro-tv' && <><div className="scanlines"></div><div className="flicker"></div></>}
       <div className="w-full max-w-2xl space-y-20 pb-40 z-20 relative">
         <header className="border-b-4 border-current pb-10 mb-20">
@@ -229,7 +217,7 @@ function PageRenderer({ page, isDev, onNavigate, onFooterClick, onSelectBlock, m
         </div>
         <footer onClick={onFooterClick} className="mt-40 py-24 border-t-2 border-current/10 text-center opacity-20 hover:opacity-100 transition-all cursor-pointer relative">
           <div className="text-[10px] font-black uppercase tracking-[0.6em] select-none">© DANIELA • LOS DOS MUNDOS</div>
-          {msg && <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-full bg-blue-600 text-white px-8 py-3 rounded-full text-[10px] font-black animate-bounce shadow-2xl border-2 border-white/20">{msg}</div>}
+          {msg && <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-full bg-blue-600 text-white px-8 py-3 rounded-full text-[10px] font-black animate-bounce shadow-2xl border-2 border-white/20 whitespace-nowrap">{msg}</div>}
         </footer>
       </div>
     </div>
@@ -263,8 +251,8 @@ function BlockRenderer({ block }: { block: Block }) {
   };
   switch(block.type) {
     case 'text': return <p className="text-xl md:text-5xl leading-[1.05] tracking-tighter whitespace-pre-wrap">{block.content}</p>;
-    case 'image': return <img src={block.content} className="w-full rounded-[2.5rem] shadow-2xl grayscale-[0.6] hover:grayscale-0 transition-all duration-1000" />;
-    case 'video': return <div className="aspect-video w-full rounded-[2.5rem] overflow-hidden shadow-2xl bg-black border-4 border-white/5"><iframe src={parseVideo(block.content)} className="w-full h-full" allowFullScreen /></div>;
+    case 'image': return <img src={block.content} className="w-full rounded-[2.5rem] shadow-2xl grayscale-[0.6] hover:grayscale-0 transition-all duration-1000" alt="Misterio" />;
+    case 'video': return <div className="aspect-video w-full rounded-[2.5rem] overflow-hidden shadow-2xl bg-black border-4 border-white/5"><iframe src={parseVideo(block.content)} title="Video" className="w-full h-full" allowFullScreen /></div>;
     default: return null;
   }
 }
