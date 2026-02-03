@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { 
   Plus, EyeOff, Layers, Home, Lock,
   Share2, Menu, X, Palette, Sparkles, Trash2, Settings,
-  ChevronUp, ChevronDown
+  ChevronUp, ChevronDown, Edit3
 } from 'lucide-react';
 
 // --- DEFINICIÓN DE TIPOS ---
@@ -25,7 +25,7 @@ interface Page {
 
 interface Config {
   pages: { [key: string]: Page };
-  pageOrder: string[]; // Nuevo: Controla el orden visual de las páginas
+  pageOrder: string[]; 
   homePageId: string;
 }
 
@@ -78,10 +78,9 @@ const themeStyles = `
 export default function App() {
   const [config, setConfig] = useState<Config>(() => {
     if (typeof window === 'undefined') return INITIAL_DATA;
-    const saved = localStorage.getItem('enigma_reorder_v1');
+    const saved = localStorage.getItem('enigma_reorder_v2');
     if (!saved) return INITIAL_DATA;
     const parsed = JSON.parse(saved);
-    // Asegurar que pageOrder existe si venimos de una versión vieja
     if (!parsed.pageOrder) parsed.pageOrder = Object.keys(parsed.pages);
     return parsed;
   });
@@ -104,7 +103,7 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    localStorage.setItem('enigma_reorder_v1', JSON.stringify(config));
+    localStorage.setItem('enigma_reorder_v2', JSON.stringify(config));
   }, [config]);
 
   const onFooterClick = () => {
@@ -121,7 +120,7 @@ export default function App() {
     } else alert("Clave incorrecta");
   };
 
-  // --- LÓGICA DE PÁGINAS ---
+  // --- ACCIONES DE PÁGINAS ---
   const addPage = () => {
     const id = 'pg' + Date.now();
     const newPage: Page = { id, title: 'Nueva Página', theme: 'default', publishDate: new Date().toISOString(), blocks: [] };
@@ -150,12 +149,11 @@ export default function App() {
     const newOrder = [...config.pageOrder];
     const targetIndex = direction === 'up' ? index - 1 : index + 1;
     if (targetIndex < 0 || targetIndex >= newOrder.length) return;
-    
     [newOrder[index], newOrder[targetIndex]] = [newOrder[targetIndex], newOrder[index]];
     setConfig(prev => ({ ...prev, pageOrder: newOrder }));
   };
 
-  // --- LÓGICA DE BLOQUES ---
+  // --- ACCIONES DE BLOQUES ---
   const addBlock = () => {
     const id = 'b' + Date.now();
     const pg = config.pages[currentPageId];
@@ -170,7 +168,6 @@ export default function App() {
     const newBlocks = [...pg.blocks];
     const targetIdx = direction === 'up' ? idx - 1 : idx + 1;
     if (targetIdx < 0 || targetIdx >= newBlocks.length) return;
-
     [newBlocks[idx], newBlocks[targetIdx]] = [newBlocks[targetIdx], newBlocks[idx]];
     setConfig({ ...config, pages: { ...config.pages, [currentPageId]: { ...pg, blocks: newBlocks } } });
   };
@@ -219,7 +216,7 @@ export default function App() {
                           <button onClick={() => movePage(idx, 'down')} className="hover:text-white disabled:opacity-20" disabled={idx === config.pageOrder.length - 1}><ChevronDown size={12}/></button>
                         </div>
                         <span onClick={() => setCurrentPageId(pid)} className="flex-1 text-xs font-bold uppercase truncate cursor-pointer">{p.title}</span>
-                        <button onClick={() => deletePage(pid)} className="hover:text-red-400"><Trash2 size={14}/></button>
+                        <button onClick={() => deletePage(pid)} className="hover:text-red-400 ml-2"><Trash2 size={14}/></button>
                       </div>
                     );
                   })}
@@ -229,7 +226,7 @@ export default function App() {
             
             {activeTab === 'blocks' && (
               <div className="space-y-4 pb-20 animate-in fade-in duration-500 text-white">
-                <div className="flex justify-between items-center mb-2"><h4 className="text-[10px] font-black uppercase text-zinc-600">Orden de Bloques</h4><button onClick={addBlock} className="bg-blue-600 text-white p-1 rounded-lg"><Plus size={18}/></button></div>
+                <div className="flex justify-between items-center mb-2"><h4 className="text-[10px] font-black uppercase text-zinc-600">Gestión de Bloques</h4><button onClick={addBlock} className="bg-blue-600 text-white p-1 rounded-lg"><Plus size={18}/></button></div>
                 {currentPage.blocks.map((b: Block, idx: number) => (
                   <div key={b.id} className={`bg-zinc-900 border rounded-2xl overflow-hidden transition-all ${editingId === b.id ? 'border-blue-500 shadow-xl' : 'border-slate-800'}`}>
                     <div className="p-3 flex items-center justify-between">
@@ -238,23 +235,49 @@ export default function App() {
                            <button onClick={() => moveBlock(idx, 'up')} className="hover:text-white disabled:opacity-20" disabled={idx === 0}><ChevronUp size={14}/></button>
                            <button onClick={() => moveBlock(idx, 'down')} className="hover:text-white disabled:opacity-20" disabled={idx === currentPage.blocks.length - 1}><ChevronDown size={14}/></button>
                          </div>
-                         <span onClick={() => setEditingId(editingId === b.id ? null : b.id)} className="text-[9px] font-black uppercase text-zinc-500 cursor-pointer">{b.type}: {b.content.substring(0,10)}...</span>
+                         <span onClick={() => setEditingId(editingId === b.id ? null : b.id)} className="text-[9px] font-black uppercase text-zinc-500 cursor-pointer">{b.type}: {b.content.substring(0,12)}...</span>
                       </div>
-                      <Settings onClick={() => setEditingId(editingId === b.id ? null : b.id)} size={12} className="text-zinc-600 cursor-pointer" />
+                      <Settings onClick={() => setEditingId(editingId === b.id ? null : b.id)} size={12} className="text-zinc-600 cursor-pointer hover:text-white transition-colors" />
                     </div>
                     {editingId === b.id && (
                       <div className="p-4 bg-zinc-950 border-t border-zinc-800 space-y-4">
-                         <textarea value={b.content} onChange={e => { const blocks = [...currentPage.blocks]; blocks[idx].content = e.target.value; setConfig({...config, pages: {...config.pages, [currentPageId]: {...currentPage, blocks}}}); }} className="w-full bg-zinc-900 border border-zinc-800 p-2 rounded text-[10px] text-white min-h-[60px] outline-none" />
-                         <div className="grid grid-cols-2 gap-2">
-                           <select value={b.actionType} onChange={e => { const blocks = [...currentPage.blocks]; blocks[idx].actionType = e.target.value; setConfig({...config, pages: {...config.pages, [currentPageId]: {...currentPage, blocks}}}); }} className="w-full bg-zinc-900 p-2 rounded text-[9px] text-slate-500 outline-none">
-                             <option value="none">Sin Pista</option><option value="hover">Hover</option><option value="long-hover">3s</option><option value="triple-click">Triple</option>
-                           </select>
-                           <select value={b.clueLink} onChange={e => { const blocks = [...currentPage.blocks]; blocks[idx].clueLink = e.target.value; setConfig({...config, pages: {...config.pages, [currentPageId]: {...currentPage, blocks}}}); }} className="w-full bg-zinc-900 p-2 rounded text-[9px] text-slate-500 outline-none">
-                             <option value="">Destino...</option>
-                             {config.pageOrder.map(pid => <option key={pid} value={pid}>{config.pages[pid].title}</option>)}
+                         <div className="space-y-1">
+                           <label className="text-[8px] uppercase font-bold text-zinc-600">Tipo de Contenido</label>
+                           <select 
+                             value={b.type} 
+                             onChange={e => {
+                               const blocks = [...currentPage.blocks];
+                               blocks[idx].type = e.target.value;
+                               setConfig({...config, pages: {...config.pages, [currentPageId]: {...currentPage, blocks}}});
+                             }} 
+                             className="w-full bg-zinc-900 border border-zinc-800 p-2 rounded text-[10px] text-white outline-none"
+                           >
+                             <option value="text">Texto</option>
+                             <option value="image">Imagen (URL)</option>
+                             <option value="video">Video (YT/TikTok)</option>
+                             <option value="html">HTML Personalizado</option>
                            </select>
                          </div>
-                         <button onClick={() => { const blocks = currentPage.blocks.filter(block => block.id !== b.id); setConfig({...config, pages: {...config.pages, [currentPageId]: {...currentPage, blocks}}}); }} className="w-full p-2 bg-red-600/10 text-red-500 text-[9px] font-black uppercase rounded-lg">Eliminar</button>
+                         <div className="space-y-1">
+                           <label className="text-[8px] uppercase font-bold text-zinc-600">Contenido / URL</label>
+                           <textarea value={b.content} onChange={e => { const blocks = [...currentPage.blocks]; blocks[idx].content = e.target.value; setConfig({...config, pages: {...config.pages, [currentPageId]: {...currentPage, blocks}}}); }} className="w-full bg-zinc-900 border border-zinc-800 p-2 rounded text-[10px] text-white min-h-[80px] outline-none focus:border-blue-500" />
+                         </div>
+                         <div className="grid grid-cols-2 gap-2">
+                           <div className="space-y-1">
+                             <label className="text-[8px] uppercase font-bold text-zinc-600">Acción</label>
+                             <select value={b.actionType} onChange={e => { const blocks = [...currentPage.blocks]; blocks[idx].actionType = e.target.value; setConfig({...config, pages: {...config.pages, [currentPageId]: {...currentPage, blocks}}}); }} className="w-full bg-zinc-900 p-2 rounded text-[9px] text-slate-500 outline-none">
+                               <option value="none">Ninguna</option><option value="hover">Hover</option><option value="long-hover">3s</option><option value="triple-click">3 Clics</option>
+                             </select>
+                           </div>
+                           <div className="space-y-1">
+                             <label className="text-[8px] uppercase font-bold text-zinc-600">Destino</label>
+                             <select value={b.clueLink} onChange={e => { const blocks = [...currentPage.blocks]; blocks[idx].clueLink = e.target.value; setConfig({...config, pages: {...config.pages, [currentPageId]: {...currentPage, blocks}}}); }} className="w-full bg-zinc-900 p-2 rounded text-[9px] text-slate-500 outline-none">
+                               <option value="">Ninguno</option>
+                               {config.pageOrder.map(pid => <option key={pid} value={pid}>{config.pages[pid].title}</option>)}
+                             </select>
+                           </div>
+                         </div>
+                         <button onClick={() => { const blocks = currentPage.blocks.filter(block => block.id !== b.id); setConfig({...config, pages: {...config.pages, [currentPageId]: {...currentPage, blocks}}}); }} className="w-full p-2 bg-red-600/10 text-red-500 text-[9px] font-black uppercase rounded-lg hover:bg-red-600/20">Eliminar Fragmento</button>
                       </div>
                     )}
                   </div>
@@ -355,8 +378,9 @@ function BlockRenderer({ block }: { block: Block }) {
   };
   switch(block.type) {
     case 'text': return <p className="text-xl md:text-5xl leading-[1.05] tracking-tighter whitespace-pre-wrap">{block.content}</p>;
-    case 'image': return <img src={block.content} className="w-full rounded-[2.5rem] shadow-2xl grayscale-[0.6] hover:grayscale-0 transition-all duration-1000" alt="Misterio" />;
+    case 'image': return <img src={block.content} className="w-full rounded-[2.5rem] shadow-2xl grayscale-[0.6] hover:grayscale-0 transition-all duration-1000" alt="Visual" />;
     case 'video': return <div className="aspect-video w-full rounded-[2.5rem] overflow-hidden shadow-2xl bg-black border-4 border-white/5"><iframe src={parseVideo(block.content)} title="Contenido" className="w-full h-full" allowFullScreen /></div>;
+    case 'html': return <div dangerouslySetInnerHTML={{ __html: block.content }} />;
     default: return null;
   }
 }
