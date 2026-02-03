@@ -1,8 +1,8 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { 
   Plus, EyeOff, Layers, Home, Lock,
   Share2, Menu, X, Palette, Sparkles, Trash2, Settings,
-  Edit3, GripVertical, Monitor, Tv, FileText, ExternalLink, FileCode, Check, AlertCircle
+  Edit3, GripVertical, Monitor, Tv, FileText, ExternalLink, FileCode, Check, AlertCircle, Smartphone
 } from 'lucide-react';
 
 // --- INTERFACES ---
@@ -21,6 +21,8 @@ interface Page {
   theme: string;
   publishDate: string;
   blocks: Block[];
+  no_pc?: boolean;     // Nuevo: Ocultar en PC
+  no_mobile?: boolean; // Nuevo: Ocultar en Móvil
 }
 
 interface Config {
@@ -59,6 +61,8 @@ const themeStyles = `
   .scanlines { position: absolute; inset: 0; pointer-events: none; z-index: 10; background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%); background-size: 100% 4px; }
   @keyframes flicker { 0% { opacity: 0.1; } 100% { opacity: 0.12; } }
   .flicker { animation: flicker 0.1s infinite; position: absolute; inset: 0; pointer-events: none; z-index: 11; background: white; opacity: 0.03; }
+  .custom-scroll::-webkit-scrollbar { width: 6px; }
+  .custom-scroll::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.2); border-radius: 10px; }
 `;
 
 export default function App() {
@@ -72,14 +76,20 @@ export default function App() {
   const [password, setPassword] = useState("");
   const [devClicks, setDevClicks] = useState(0);
   const [devMsg, setDevMsg] = useState("");
+  const [isMobileEnv, setIsMobileEnv] = useState(false);
   
-  // Estados para el editor de JSON
   const [rawJson, setRawJson] = useState("");
   const [jsonError, setJsonError] = useState<string | null>(null);
 
   useEffect(() => {
+    const checkEnv = () => {
+      setIsMobileEnv(window.innerWidth < 768);
+    };
+    checkEnv();
+    window.addEventListener('resize', checkEnv);
+    
     const loadData = async () => {
-      const saved = localStorage.getItem('enigma_v8_data');
+      const saved = localStorage.getItem('enigma_v9_env');
       if (saved) {
         const parsed = JSON.parse(saved);
         setConfig(parsed);
@@ -106,12 +116,15 @@ export default function App() {
     const style = document.createElement('style');
     style.textContent = themeStyles;
     document.head.append(style);
-    return () => style.remove();
+    return () => {
+      style.remove();
+      window.removeEventListener('resize', checkEnv);
+    };
   }, []);
 
   useEffect(() => {
     if (config !== INITIAL_DATA) {
-      localStorage.setItem('enigma_v8_data', JSON.stringify(config));
+      localStorage.setItem('enigma_v9_env', JSON.stringify(config));
     }
   }, [config]);
 
@@ -122,16 +135,8 @@ export default function App() {
     if (newWindow) {
       newWindow.document.write(`
         <html>
-          <head>
-            <title>Configuración Exportada - Enigma</title>
-            <style>
-              body { background: #1a1a1a; color: #00ff00; font-family: monospace; padding: 20px; }
-              pre { white-space: pre-wrap; word-wrap: break-word; }
-            </style>
-          </head>
-          <body>
-            <h1>JSON de Configuración</h1>
-            <hr/>
+          <head><title>Export - Enigma</title></head>
+          <body style="background:#1a1a1a;color:#0f0;font-family:monospace;padding:20px;">
             <pre>${jsonStr}</pre>
           </body>
         </html>
@@ -139,22 +144,19 @@ export default function App() {
     }
   };
 
-  // --- APLICAR JSON DESDE EL EDITOR ---
+  // --- APLICAR JSON ---
   const applyRawJson = () => {
     try {
       const parsed = JSON.parse(rawJson);
-      // Validación básica
-      if (!parsed.pages || !parsed.homePageId) throw new Error("Estructura JSON inválida");
+      if (!parsed.pages || !parsed.homePageId) throw new Error("Estructura inválida");
       setConfig(parsed);
       setCurrentPageId(parsed.homePageId);
       setJsonError(null);
-      alert("Configuración aplicada con éxito");
-    } catch (e: any) {
-      setJsonError(e.message);
-    }
+      alert("Configuración aplicada");
+    } catch (e: any) { setJsonError(e.message); }
   };
 
-  // --- LÓGICA DE DRAG & DROP ---
+  // --- DRAG & DROP ---
   const handleDragStart = (e: React.DragEvent, id: string, type: 'page' | 'block') => {
     e.dataTransfer.setData('id', id);
     e.dataTransfer.setData('type', type);
@@ -182,31 +184,13 @@ export default function App() {
     }
   };
 
-  // --- FUNCIÓN PARA AÑADIR BLOQUE (RESTAURADA) ---
   const addBlock = () => {
     const id = 'b' + Date.now();
     const pg = config.pages[currentPageId];
     if (!pg) return;
-    const newBlock: Block = { 
-      id, 
-      type: 'text', 
-      content: 'Nuevo fragmento...', 
-      actionType: 'none', 
-      clueLink: '', 
-      options: { scale: 100 } 
-    };
-    setConfig(prev => ({
-      ...prev,
-      pages: {
-        ...prev.pages,
-        [currentPageId]: {
-          ...pg,
-          blocks: [...pg.blocks, newBlock]
-        }
-      }
-    }));
-    setEditingId(id);
-    setActiveTab('blocks');
+    const newBlock: Block = { id, type: 'text', content: 'Nuevo fragmento...', actionType: 'none', clueLink: '', options: { scale: 100 } };
+    setConfig(prev => ({...prev, pages: {...prev.pages, [currentPageId]: {...pg, blocks: [...pg.blocks, newBlock]}}}));
+    setEditingId(id); setActiveTab('blocks');
   };
 
   const handleLogin = () => {
@@ -215,12 +199,12 @@ export default function App() {
     } else alert("Clave incorrecta");
   };
 
-  const currentPage = config.pages[currentPageId] || Object.values(config.pages)[0];
+  const currentPage = config.pages[currentPageId] || config.pages[config.homePageId];
 
   return (
-    <div className={`flex h-screen w-full transition-colors duration-500 overflow-hidden ${isDev ? 'bg-zinc-900' : 'bg-slate-50'}`}>
+    <div className={`flex h-screen w-full transition-colors duration-500 overflow-hidden ${isDev ? 'bg-zinc-900' : 'bg-white'}`}>
       
-      {/* MODAL DE LOGIN */}
+      {/* LOGIN MODAL */}
       {showLogin && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/90 backdrop-blur-md p-6">
           <div className="bg-zinc-900 border border-zinc-800 p-10 rounded-[3rem] w-full max-w-sm shadow-2xl text-center">
@@ -236,7 +220,7 @@ export default function App() {
       {isDev && (
         <aside className={`h-full bg-zinc-950 border-r border-zinc-800 flex flex-col z-[100] transition-all duration-300 ${sidebarOpen ? 'w-[90vw] md:w-96' : 'w-0 overflow-hidden'}`}>
           <div className="p-4 border-b border-zinc-900 flex justify-between items-center shrink-0">
-            <span className="text-xs font-black uppercase text-white tracking-widest flex items-center gap-2"><Sparkles size={16} className="text-blue-400" /> ENIGMA</span>
+            <span className="text-xs font-black uppercase text-white tracking-widest flex items-center gap-2"><Sparkles size={16} className="text-blue-400" /> CMS MULTI-ENV</span>
             <button onClick={() => setSidebarOpen(false)} className="text-zinc-500"><X size={20}/></button>
           </div>
 
@@ -245,12 +229,9 @@ export default function App() {
               { id: 'pages', icon: Home, label: 'Páginas' },
               { id: 'design', icon: Palette, label: 'Diseño' },
               { id: 'blocks', icon: Layers, label: 'Bloques' },
-              { id: 'json', icon: FileCode, label: 'JSON RAW' }
+              { id: 'json', icon: FileCode, label: 'JSON' }
             ].map(tab => (
-              <button key={tab.id} onClick={() => {
-                setActiveTab(tab.id);
-                if (tab.id === 'json') setRawJson(JSON.stringify(config, null, 2));
-              }}
+              <button key={tab.id} onClick={() => { setActiveTab(tab.id); if (tab.id === 'json') setRawJson(JSON.stringify(config, null, 2)); }}
                 className={`flex-1 py-4 flex flex-col items-center gap-1 transition-all ${activeTab === tab.id ? 'text-blue-400 bg-blue-400/5' : 'text-zinc-600'}`}
               >
                 <tab.icon size={16} />
@@ -259,53 +240,24 @@ export default function App() {
             ))}
           </div>
 
-          <div className="flex-1 overflow-y-auto p-4 space-y-6">
-            {/* PESTAÑA: JSON RAW EDITOR */}
+          <div className="flex-1 overflow-y-auto p-4 space-y-6 custom-scroll">
             {activeTab === 'json' && (
               <div className="h-full flex flex-col space-y-4 animate-in fade-in">
                 <div className="flex justify-between items-center">
-                  <h4 className="text-[10px] font-black uppercase text-zinc-600 tracking-widest">Editor de Configuración</h4>
-                  <button onClick={exportToNewWindow} className="text-xs text-blue-400 flex items-center gap-1 hover:text-blue-300">
-                    <ExternalLink size={12} /> Nueva Ventana
-                  </button>
+                  <h4 className="text-[10px] font-black uppercase text-zinc-600 tracking-widest">Editor Raw</h4>
+                  <button onClick={exportToNewWindow} className="text-xs text-blue-400 flex items-center gap-1 hover:text-blue-300"><ExternalLink size={12} /> Nueva Ventana</button>
                 </div>
-                
-                <div className="flex-1 relative">
-                  <textarea 
-                    value={rawJson}
-                    onChange={(e) => setRawJson(e.target.value)}
-                    spellCheck={false}
-                    className="w-full h-[60vh] bg-zinc-900 text-emerald-500 font-mono text-[11px] p-4 rounded-xl border border-zinc-800 outline-none focus:border-blue-500 resize-none custom-scroll"
-                  />
-                  {jsonError && (
-                    <div className="absolute bottom-4 left-4 right-4 bg-red-500/10 border border-red-500/50 p-2 rounded-lg flex items-center gap-2 text-[10px] text-red-400">
-                      <AlertCircle size={14} /> Error: {jsonError}
-                    </div>
-                  )}
-                </div>
-
-                <div className="flex gap-2 shrink-0">
-                  <button 
-                    onClick={() => setRawJson(JSON.stringify(config, null, 2))}
-                    className="flex-1 p-3 rounded-xl border border-zinc-800 text-zinc-500 text-[10px] font-black uppercase hover:bg-zinc-800"
-                  >
-                    Resetear
-                  </button>
-                  <button 
-                    onClick={applyRawJson}
-                    className="flex-1 p-3 rounded-xl bg-blue-600 text-white text-[10px] font-black uppercase flex items-center justify-center gap-2 shadow-lg"
-                  >
-                    <Check size={14} /> Aplicar Cambios
-                  </button>
-                </div>
-                <p className="text-[9px] text-zinc-600 italic">Pega aquí un JSON válido para sobreescribir toda la configuración.</p>
+                <textarea value={rawJson} onChange={(e) => setRawJson(e.target.value)} spellCheck={false} className="w-full h-[60vh] bg-zinc-900 text-emerald-500 font-mono text-[11px] p-4 rounded-xl border border-zinc-800 outline-none focus:border-blue-500 resize-none custom-scroll" />
+                <button onClick={applyRawJson} className="w-full p-3 rounded-xl bg-blue-600 text-white text-[10px] font-black uppercase flex items-center justify-center gap-2 shadow-lg"><Check size={14} /> Aplicar</button>
               </div>
             )}
 
-            {/* PESTAÑA: PÁGINAS */}
             {activeTab === 'pages' && (
               <div className="space-y-4 animate-in fade-in">
-                <div className="flex justify-between items-center text-white"><h4 className="text-[10px] font-black uppercase tracking-widest">Navegación</h4><button onClick={() => {const id='pg'+Date.now(); setConfig(prev=>({...prev, pages:{...prev.pages, [id]:{id, title:'Nueva', theme:'default', publishDate:new Date().toISOString(), blocks:[]}}, pageOrder:[...prev.pageOrder, id]})); setCurrentPageId(id);}} className="text-blue-500"><Plus size={18}/></button></div>
+                <div className="flex justify-between items-center text-white">
+                  <h4 className="text-[10px] font-black uppercase tracking-widest">Navegación</h4>
+                  <button onClick={() => {const id='pg'+Date.now(); setConfig(prev=>({...prev, pages:{...prev.pages, [id]:{id, title:'Nueva', theme:'default', publishDate:new Date().toISOString(), blocks:[]}}, pageOrder:[...prev.pageOrder, id]})); setCurrentPageId(id);}} className="text-blue-500"><Plus size={18}/></button>
+                </div>
                 <div className="space-y-2">
                   {config.pageOrder.map((pid) => (
                     <div 
@@ -321,15 +273,35 @@ export default function App() {
               </div>
             )}
 
-            {/* PESTAÑA: DISEÑO */}
             {activeTab === 'design' && (
               <div className="space-y-6 animate-in fade-in">
                 <div>
-                  <label className="text-[10px] font-black uppercase text-zinc-600 block mb-2">Nombre de la Página</label>
+                  <label className="text-[10px] font-black uppercase text-zinc-600 block mb-2">Nombre de Página</label>
                   <input value={currentPage?.title || ""} onChange={e => setConfig({...config, pages: {...config.pages, [currentPageId]: {...currentPage, title: e.target.value}}})} className="w-full bg-zinc-900 border border-zinc-800 p-3 rounded-xl text-xs text-white outline-none focus:border-blue-500" />
                 </div>
+                
+                <div className="space-y-2">
+                   <label className="text-[10px] font-black uppercase text-zinc-600 block mb-2">Visibilidad de Entorno</label>
+                   <div className="flex flex-col gap-2">
+                      <label className="flex items-center gap-3 p-3 bg-zinc-900 rounded-xl border border-zinc-800 cursor-pointer transition-all hover:bg-zinc-800">
+                        <input type="checkbox" checked={!currentPage.no_pc} onChange={e => setConfig({...config, pages: {...config.pages, [currentPageId]: {...currentPage, no_pc: !e.target.checked}}})} className="w-4 h-4 rounded accent-blue-500" />
+                        <div className="flex flex-col">
+                          <span className="text-xs font-bold text-white uppercase">Mostrar en PC</span>
+                          <span className="text-[9px] text-zinc-500">Pantalla grande</span>
+                        </div>
+                      </label>
+                      <label className="flex items-center gap-3 p-3 bg-zinc-900 rounded-xl border border-zinc-800 cursor-pointer transition-all hover:bg-zinc-800">
+                        <input type="checkbox" checked={!currentPage.no_mobile} onChange={e => setConfig({...config, pages: {...config.pages, [currentPageId]: {...currentPage, no_mobile: !e.target.checked}}})} className="w-4 h-4 rounded accent-blue-500" />
+                        <div className="flex flex-col">
+                          <span className="text-xs font-bold text-white uppercase">Mostrar en Móvil</span>
+                          <span className="text-[9px] text-zinc-500">Celulares</span>
+                        </div>
+                      </label>
+                   </div>
+                </div>
+
                 <div>
-                  <label className="text-[10px] font-black uppercase text-zinc-600 block mb-2">Seleccionar Plantilla</label>
+                  <label className="text-[10px] font-black uppercase text-zinc-600 block mb-2">Plantilla Visual</label>
                   <div className="grid gap-2">
                     {[
                       {id: 'default', label: 'Mundo Real', icon: Monitor},
@@ -342,11 +314,9 @@ export default function App() {
                     ))}
                   </div>
                 </div>
-                <button onClick={() => setConfig({...config, homePageId: currentPageId})} className={`w-full p-4 rounded-2xl border text-[10px] font-black uppercase flex items-center justify-center gap-2 ${config.homePageId === currentPageId ? 'bg-yellow-500/10 border-yellow-500 text-yellow-500' : 'bg-zinc-900 border-zinc-800 text-zinc-600'}`}>Establecer como Inicio</button>
               </div>
             )}
 
-            {/* PESTAÑA: BLOQUES */}
             {activeTab === 'blocks' && (
               <div className="space-y-4 pb-20 animate-in fade-in text-white">
                 <div className="flex justify-between items-center mb-2"><h4 className="text-[10px] font-black uppercase tracking-widest">Contenido</h4><button onClick={addBlock} className="bg-blue-600 p-1 rounded-lg"><Plus size={18}/></button></div>
@@ -364,7 +334,7 @@ export default function App() {
                          <select value={b.type} onChange={e => { const blocks = [...currentPage.blocks]; blocks[idx].type = e.target.value; setConfig({...config, pages: {...config.pages, [currentPageId]: {...currentPage, blocks}}}); }} className="w-full bg-zinc-900 border border-zinc-800 p-2 rounded text-[10px] text-white">
                             <option value="text">Texto</option><option value="image">Imagen</option><option value="video">Video</option><option value="html">HTML</option>
                          </select>
-                         <textarea value={b.content} onChange={e => { const blocks = [...currentPage.blocks]; blocks[idx].content = e.target.value; setConfig({...config, pages: {...config.pages, [currentPageId]: {...currentPage, blocks}}}); }} className="w-full bg-zinc-900 border border-zinc-800 p-2 rounded text-[10px] text-white min-h-[60px] outline-none focus:border-blue-500" />
+                         <textarea value={b.content} onChange={e => { const blocks = [...currentPage.blocks]; blocks[idx].content = e.target.value; setConfig({...config, pages: {...config.pages, [currentPageId]: {...currentPage, blocks}}}); }} className="w-full bg-zinc-900 border border-zinc-800 p-2 rounded text-[10px] text-white min-h-[60px] outline-none" />
                          <div className="grid grid-cols-2 gap-2">
                            <select value={b.actionType} onChange={e => { const blocks = [...currentPage.blocks]; blocks[idx].actionType = e.target.value; setConfig({...config, pages: {...config.pages, [currentPageId]: {...currentPage, blocks}}}); }} className="w-full bg-zinc-900 p-2 rounded text-[9px] text-slate-500 outline-none">
                              <option value="none">Sin Pista</option><option value="hover">Hover</option><option value="long-hover">3s</option><option value="triple-click">3 Clics</option>
@@ -389,18 +359,25 @@ export default function App() {
       <main className="flex-1 flex flex-col overflow-hidden relative">
         {isDev && (
           <div className="h-16 bg-white border-b border-zinc-200 flex items-center justify-between px-6 shrink-0 z-50 shadow-sm transition-all duration-300">
-            <button onClick={() => setSidebarOpen(!sidebarOpen)} className="p-2.5 bg-zinc-100 rounded-2xl text-zinc-900 hover:bg-zinc-200 transition-all">{sidebarOpen ? <X size={20}/> : <Menu size={20}/>}</button>
-            <div className="text-[10px] font-black uppercase tracking-widest text-zinc-400 flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></span> Modo Edición
+            <div className="flex items-center gap-4">
+               <button onClick={() => setSidebarOpen(!sidebarOpen)} className="p-2.5 bg-zinc-100 rounded-2xl text-zinc-900 hover:bg-zinc-200 transition-all">{sidebarOpen ? <X size={20}/> : <Menu size={20}/>}</button>
+               <div className="flex gap-2 items-center text-zinc-400">
+                  <Monitor size={14} className={!isMobileEnv ? 'text-blue-500' : ''} />
+                  <div className="w-[1px] h-4 bg-zinc-200"></div>
+                  <Smartphone size={14} className={isMobileEnv ? 'text-blue-500' : ''} />
+               </div>
             </div>
+            <div className="text-[10px] font-black uppercase tracking-widest text-zinc-400">Modo Edición</div>
             <button onClick={() => setIsDev(false)} className="px-5 py-2 bg-zinc-950 text-white rounded-2xl text-[10px] font-black uppercase shadow-lg active:scale-95 transition-all"><EyeOff size={14} className="inline mr-2"/> Finalizar</button>
           </div>
         )}
-        <div className={`flex-1 overflow-y-auto scroll-smooth transition-all duration-700 ${isDev ? 'p-6 md:p-12' : 'p-0'}`}>
-          <div className={`mx-auto transition-all duration-700 min-h-full ${isDev ? 'bg-white shadow-2xl rounded-[3rem] border-[14px] border-zinc-900 max-w-[420px] md:max-w-4xl relative overflow-hidden' : 'w-full'}`}>
+
+        <div className={`flex-1 overflow-y-auto scroll-smooth transition-all duration-700 custom-scroll ${isDev ? 'p-6 md:p-12 bg-slate-100' : 'p-0 bg-white'}`}>
+          <div className={`mx-auto transition-all duration-700 ${isDev ? 'bg-white shadow-2xl rounded-[3rem] border-[14px] border-zinc-900 max-w-[420px] md:max-w-4xl relative overflow-hidden min-h-[600px]' : 'w-full min-h-screen'}`}>
              <PageRenderer 
                 page={currentPage} 
                 isDev={isDev} 
+                isMobileEnv={isMobileEnv}
                 onNavigate={(id: string) => { setCurrentPageId(id); window.scrollTo(0,0); }} 
                 onFooterClick={() => {
                   const n = devClicks + 1; setDevClicks(n);
@@ -414,12 +391,8 @@ export default function App() {
           </div>
         </div>
 
-        {/* BOTÓN FLOTANTE PARA AÑADIR BLOQUE (MÓVIL) */}
         {isDev && (
-          <button 
-            onClick={addBlock}
-            className="fixed bottom-8 right-8 w-16 h-16 bg-blue-600 text-white rounded-full shadow-2xl flex items-center justify-center z-[110] hover:scale-110 active:scale-90 transition-all ring-4 ring-white lg:hidden"
-          >
+          <button onClick={addBlock} className="fixed bottom-8 right-8 w-16 h-16 bg-blue-600 text-white rounded-full shadow-2xl flex items-center justify-center z-[110] hover:scale-110 active:scale-90 transition-all ring-4 ring-white lg:hidden">
             <Plus size={32}/>
           </button>
         )}
@@ -428,18 +401,29 @@ export default function App() {
   );
 }
 
-function PageRenderer({ page, isDev, onNavigate, onFooterClick, onSelectBlock, msg }: any) {
+function PageRenderer({ page, isDev, onNavigate, onFooterClick, onSelectBlock, msg, isMobileEnv }: any) {
   const themes: any = {
     default: "bg-white text-zinc-900 p-8 md:p-24 flex flex-col items-center",
     journal: "theme-journal text-[#2c1e11] p-10 md:p-32 flex flex-col items-center min-h-full relative",
     'retro-tv': "theme-tv p-8 md:p-24 flex flex-col items-center min-h-full relative overflow-hidden"
   };
+
+  const isHidden = !isDev && ((isMobileEnv && page?.no_mobile) || (!isMobileEnv && page?.no_pc));
+  if (isHidden) return <div className="p-20 text-center text-zinc-400 italic bg-white h-screen flex items-center justify-center">Este fragmento no es visible desde tu dispositivo actual.</div>;
+
   return (
-    <div className={`${themes[page?.theme] || themes.default} w-full transition-all duration-1000 select-none`}>
+    <div className={`${themes[page?.theme] || themes.default} w-full transition-all duration-1000 select-none relative min-h-screen`}>
       {page?.theme === 'retro-tv' && <><div className="scanlines"></div><div className="flicker"></div></>}
-      <div className="w-full max-w-2xl space-y-20 pb-40 z-20 relative mx-auto">
+      
+      {isDev && ((isMobileEnv && page?.no_mobile) || (!isMobileEnv && page?.no_pc)) && (
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-red-500 text-white px-4 py-1 rounded-full text-[9px] font-black uppercase z-[100] flex items-center gap-2">
+           <AlertCircle size={12}/> Oculto en este entorno
+        </div>
+      )}
+
+      <div className="w-full max-w-5xl space-y-20 pb-40 z-20 relative mx-auto">
         <header className="border-b-4 border-current pb-10 mb-20 animate-in slide-in-from-top duration-700">
-          <h1 className="text-4xl md:text-8xl font-black uppercase tracking-tighter leading-[0.85]">{page?.title || "Sin Título"}</h1>
+          <h1 className="text-4xl md:text-9xl font-black uppercase tracking-tighter leading-[0.85]">{page?.title || "Sin Título"}</h1>
           <div className="text-[10px] font-bold opacity-30 uppercase tracking-[0.5em]">{page?.id || "N/A"}</div>
         </header>
         <div className="space-y-24">
