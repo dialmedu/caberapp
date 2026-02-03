@@ -44,7 +44,7 @@
           "id": "b1770092872809",
           "type": "text",
           "content": "Tocame 3 veces",
-          "actionType": "none",
+          "actionType": "triple-click",
           "clueLink": "pg1770092902680",
           "options": {
             "scale": 100
