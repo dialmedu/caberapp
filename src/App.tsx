@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { 
   Plus, EyeOff, Layers, Home, Lock,
   Share2, Menu, X, Palette, Sparkles, Trash2, Settings,
-  Edit3, GripVertical, Monitor, Tv, FileText
+  Edit3, GripVertical, Monitor, Tv, FileText, ExternalLink, FileCode, Check, AlertCircle
 } from 'lucide-react';
 
 // --- INTERFACES ---
@@ -31,13 +31,25 @@ interface Config {
 
 const INITIAL_DATA: Config = {
   pages: {
-    'home': {
-      id: 'home', title: 'El Umbral', theme: 'journal', publishDate: new Date().toISOString(),
-      blocks: [{ id: 'b1', type: 'text', content: 'Cargando historia...', actionType: 'none', clueLink: '', options: { scale: 100 } }]
+    'inicio': {
+      id: 'inicio',
+      title: 'Nueva Historia',
+      theme: 'default',
+      publishDate: new Date().toISOString(),
+      blocks: [
+        {
+          id: 'def-1',
+          type: 'text',
+          content: 'Escribe aquí tu primera pista...',
+          actionType: 'none',
+          clueLink: '',
+          options: { scale: 100 }
+        }
+      ]
     }
   },
-  pageOrder: ['home'],
-  homePageId: 'home'
+  pageOrder: ['inicio'],
+  homePageId: 'inicio'
 };
 
 const themeStyles = `
@@ -60,15 +72,19 @@ export default function App() {
   const [password, setPassword] = useState("");
   const [devClicks, setDevClicks] = useState(0);
   const [devMsg, setDevMsg] = useState("");
+  
+  // Estados para el editor de JSON
+  const [rawJson, setRawJson] = useState("");
+  const [jsonError, setJsonError] = useState<string | null>(null);
 
-  // Carga de configuración desde JSON o LocalStorage
   useEffect(() => {
     const loadData = async () => {
-      const saved = localStorage.getItem('enigma_v7_data');
+      const saved = localStorage.getItem('enigma_v8_data');
       if (saved) {
         const parsed = JSON.parse(saved);
         setConfig(parsed);
         setCurrentPageId(parsed.homePageId);
+        setRawJson(JSON.stringify(parsed, null, 2));
       } else {
         try {
           const response = await fetch('/config.json');
@@ -76,11 +92,12 @@ export default function App() {
             const data = await response.json();
             setConfig(data);
             setCurrentPageId(data.homePageId);
+            setRawJson(JSON.stringify(data, null, 2));
           }
         } catch (e) {
-          console.log("No se detectó config.json, usando datos iniciales.");
           setConfig(INITIAL_DATA);
           setCurrentPageId(INITIAL_DATA.homePageId);
+          setRawJson(JSON.stringify(INITIAL_DATA, null, 2));
         }
       }
     };
@@ -94,9 +111,49 @@ export default function App() {
 
   useEffect(() => {
     if (config !== INITIAL_DATA) {
-      localStorage.setItem('enigma_v7_data', JSON.stringify(config));
+      localStorage.setItem('enigma_v8_data', JSON.stringify(config));
+      // No actualizamos rawJson aquí para no interrumpir al usuario mientras escribe
     }
   }, [config]);
+
+  // --- EXPORTAR A NUEVA VENTANA ---
+  const exportToNewWindow = () => {
+    const jsonStr = JSON.stringify(config, null, 2);
+    const newWindow = window.open("", "_blank");
+    if (newWindow) {
+      newWindow.document.write(`
+        <html>
+          <head>
+            <title>Configuración Exportada - Enigma</title>
+            <style>
+              body { background: #1a1a1a; color: #00ff00; font-family: monospace; padding: 20px; }
+              pre { white-space: pre-wrap; word-wrap: break-word; }
+            </style>
+          </head>
+          <body>
+            <h1>JSON de Configuración</h1>
+            <hr/>
+            <pre>${jsonStr}</pre>
+          </body>
+        </html>
+      `);
+    }
+  };
+
+  // --- APLICAR JSON DESDE EL EDITOR ---
+  const applyRawJson = () => {
+    try {
+      const parsed = JSON.parse(rawJson);
+      // Validación básica
+      if (!parsed.pages || !parsed.homePageId) throw new Error("Estructura JSON inválida");
+      setConfig(parsed);
+      setCurrentPageId(parsed.homePageId);
+      setJsonError(null);
+      alert("Configuración aplicada con éxito");
+    } catch (e: any) {
+      setJsonError(e.message);
+    }
+  };
 
   // --- LÓGICA DE DRAG & DROP ---
   const handleDragStart = (e: React.DragEvent, id: string, type: 'page' | 'block') => {
@@ -126,20 +183,10 @@ export default function App() {
     }
   };
 
-  // --- ACCIONES ---
   const handleLogin = () => {
     if (password === "Daniela") {
       setIsDev(true); setShowLogin(false); setSidebarOpen(true); setPassword("");
     } else alert("Clave incorrecta");
-  };
-
-  const addBlock = () => {
-    const id = 'b' + Date.now();
-    const pg = config.pages[currentPageId];
-    const newBlock: Block = { id, type: 'text', content: 'Nuevo fragmento...', actionType: 'none', clueLink: '', options: { scale: 100 } };
-    setConfig({ ...config, pages: { ...config.pages, [currentPageId]: { ...pg, blocks: [...pg.blocks, newBlock] } } });
-    setEditingId(id);
-    setActiveTab('blocks');
   };
 
   const currentPage = config.pages[currentPageId] || Object.values(config.pages)[0];
@@ -161,26 +208,78 @@ export default function App() {
 
       {/* PANEL DE EDITOR */}
       {isDev && (
-        <aside className={`h-full bg-zinc-950 border-r border-zinc-800 flex flex-col z-[100] transition-all duration-300 ${sidebarOpen ? 'w-[85vw] md:w-80' : 'w-0 overflow-hidden'}`}>
+        <aside className={`h-full bg-zinc-950 border-r border-zinc-800 flex flex-col z-[100] transition-all duration-300 ${sidebarOpen ? 'w-[90vw] md:w-96' : 'w-0 overflow-hidden'}`}>
           <div className="p-4 border-b border-zinc-900 flex justify-between items-center shrink-0">
             <span className="text-xs font-black uppercase text-white tracking-widest flex items-center gap-2"><Sparkles size={16} className="text-blue-400" /> ENIGMA</span>
             <button onClick={() => setSidebarOpen(false)} className="text-zinc-500"><X size={20}/></button>
           </div>
 
           <div className="flex border-b border-zinc-900 shrink-0">
-            {['pages', 'design', 'blocks'].map(tab => (
-              <button key={tab} onClick={() => setActiveTab(tab)} className={`flex-1 py-4 flex flex-col items-center gap-1 transition-all ${activeTab === tab ? 'text-blue-400 bg-blue-400/5' : 'text-zinc-600'}`}>
-                {tab === 'pages' ? <Home size={16}/> : tab === 'design' ? <Palette size={16}/> : <Layers size={16}/>}
-                <span className="text-[9px] font-black uppercase tracking-tighter">{tab}</span>
+            {[
+              { id: 'pages', icon: Home, label: 'Páginas' },
+              { id: 'design', icon: Palette, label: 'Diseño' },
+              { id: 'blocks', icon: Layers, label: 'Bloques' },
+              { id: 'json', icon: FileCode, label: 'JSON RAW' }
+            ].map(tab => (
+              <button key={tab.id} onClick={() => {
+                setActiveTab(tab.id);
+                if (tab.id === 'json') setRawJson(JSON.stringify(config, null, 2));
+              }}
+                className={`flex-1 py-4 flex flex-col items-center gap-1 transition-all ${activeTab === tab.id ? 'text-blue-400 bg-blue-400/5' : 'text-zinc-600'}`}
+              >
+                <tab.icon size={16} />
+                <span className="text-[9px] font-black uppercase tracking-tighter">{tab.label}</span>
               </button>
             ))}
           </div>
 
           <div className="flex-1 overflow-y-auto p-4 space-y-6">
+            {/* PESTAÑA: JSON RAW EDITOR */}
+            {activeTab === 'json' && (
+              <div className="h-full flex flex-col space-y-4 animate-in fade-in">
+                <div className="flex justify-between items-center">
+                  <h4 className="text-[10px] font-black uppercase text-zinc-600 tracking-widest">Editor de Configuración</h4>
+                  <button onClick={exportToNewWindow} className="text-xs text-blue-400 flex items-center gap-1 hover:text-blue-300">
+                    <ExternalLink size={12} /> Nueva Ventana
+                  </button>
+                </div>
+                
+                <div className="flex-1 relative">
+                  <textarea 
+                    value={rawJson}
+                    onChange={(e) => setRawJson(e.target.value)}
+                    spellCheck={false}
+                    className="w-full h-[60vh] bg-zinc-900 text-emerald-500 font-mono text-[11px] p-4 rounded-xl border border-zinc-800 outline-none focus:border-blue-500 resize-none custom-scroll"
+                  />
+                  {jsonError && (
+                    <div className="absolute bottom-4 left-4 right-4 bg-red-500/10 border border-red-500/50 p-2 rounded-lg flex items-center gap-2 text-[10px] text-red-400">
+                      <AlertCircle size={14} /> Error: {jsonError}
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex gap-2 shrink-0">
+                  <button 
+                    onClick={() => setRawJson(JSON.stringify(config, null, 2))}
+                    className="flex-1 p-3 rounded-xl border border-zinc-800 text-zinc-500 text-[10px] font-black uppercase hover:bg-zinc-800"
+                  >
+                    Resetear
+                  </button>
+                  <button 
+                    onClick={applyRawJson}
+                    className="flex-1 p-3 rounded-xl bg-blue-600 text-white text-[10px] font-black uppercase flex items-center justify-center gap-2 shadow-lg"
+                  >
+                    <Check size={14} /> Aplicar Cambios
+                  </button>
+                </div>
+                <p className="text-[9px] text-zinc-600 italic">Pega aquí un JSON válido para sobreescribir toda la configuración.</p>
+              </div>
+            )}
+
             {/* PESTAÑA: PÁGINAS */}
             {activeTab === 'pages' && (
               <div className="space-y-4 animate-in fade-in">
-                <div className="flex justify-between items-center text-white"><h4 className="text-[10px] font-black uppercase tracking-widest">Orden de Navegación</h4><button onClick={() => {const id='pg'+Date.now(); setConfig(prev=>({...prev, pages:{...prev.pages, [id]:{id, title:'Nueva', theme:'default', publishDate:new Date().toISOString(), blocks:[]}}, pageOrder:[...prev.pageOrder, id]})); setCurrentPageId(id);}} className="text-blue-500"><Plus size={18}/></button></div>
+                <div className="flex justify-between items-center text-white"><h4 className="text-[10px] font-black uppercase tracking-widest">Navegación</h4><button onClick={() => {const id='pg'+Date.now(); setConfig(prev=>({...prev, pages:{...prev.pages, [id]:{id, title:'Nueva', theme:'default', publishDate:new Date().toISOString(), blocks:[]}}, pageOrder:[...prev.pageOrder, id]})); setCurrentPageId(id);}} className="text-blue-500"><Plus size={18}/></button></div>
                 <div className="space-y-2">
                   {config.pageOrder.map((pid) => (
                     <div 
@@ -188,7 +287,7 @@ export default function App() {
                       className={`p-3 rounded-2xl border flex items-center gap-3 cursor-grab transition-all ${currentPageId === pid ? 'bg-blue-600 border-blue-500 text-white shadow-md' : 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:border-zinc-700'}`}
                     >
                       <GripVertical size={14} className="opacity-40" />
-                      <span onClick={() => setCurrentPageId(pid)} className="flex-1 text-xs font-bold uppercase truncate">{config.pages[pid].title}</span>
+                      <span onClick={() => setCurrentPageId(pid)} className="flex-1 text-xs font-bold uppercase truncate">{config.pages[pid]?.title || pid}</span>
                       <button onClick={() => {if(config.pageOrder.length > 1){ const {[pid]:_, ...rest} = config.pages; setConfig(p=>({...p, pages:rest, pageOrder:p.pageOrder.filter(id=>id!==pid)})); setCurrentPageId(config.pageOrder[0]); }}}><Trash2 size={14}/></button>
                     </div>
                   ))}
@@ -196,12 +295,12 @@ export default function App() {
               </div>
             )}
 
-            {/* PESTAÑA: DISEÑO (CORREGIDA) */}
+            {/* PESTAÑA: DISEÑO */}
             {activeTab === 'design' && (
               <div className="space-y-6 animate-in fade-in">
                 <div>
                   <label className="text-[10px] font-black uppercase text-zinc-600 block mb-2">Nombre de la Página</label>
-                  <input value={currentPage.title} onChange={e => setConfig({...config, pages: {...config.pages, [currentPageId]: {...currentPage, title: e.target.value}}})} className="w-full bg-zinc-900 border border-zinc-800 p-3 rounded-xl text-xs text-white outline-none focus:border-blue-500" />
+                  <input value={currentPage?.title || ""} onChange={e => setConfig({...config, pages: {...config.pages, [currentPageId]: {...currentPage, title: e.target.value}}})} className="w-full bg-zinc-900 border border-zinc-800 p-3 rounded-xl text-xs text-white outline-none focus:border-blue-500" />
                 </div>
                 <div>
                   <label className="text-[10px] font-black uppercase text-zinc-600 block mb-2">Seleccionar Plantilla</label>
@@ -211,7 +310,7 @@ export default function App() {
                       {id: 'journal', label: 'Diario Antiguo', icon: FileText},
                       {id: 'retro-tv', label: 'Televisor Retro', icon: Tv}
                     ].map(t => (
-                      <button key={t.id} onClick={() => setConfig({...config, pages: {...config.pages, [currentPageId]: {...currentPage, theme: t.id}}})} className={`p-4 rounded-2xl border text-[10px] font-black uppercase text-left flex items-center gap-3 transition-all ${currentPage.theme === t.id ? 'bg-emerald-600/10 border-emerald-500 text-emerald-400' : 'bg-zinc-900 border-zinc-800 text-zinc-600 hover:border-zinc-700'}`}>
+                      <button key={t.id} onClick={() => setConfig({...config, pages: {...config.pages, [currentPageId]: {...currentPage, theme: t.id}}})} className={`p-4 rounded-2xl border text-[10px] font-black uppercase text-left flex items-center gap-3 transition-all ${currentPage?.theme === t.id ? 'bg-emerald-600/10 border-emerald-500 text-emerald-400' : 'bg-zinc-900 border-zinc-800 text-zinc-600 hover:border-zinc-700'}`}>
                         <t.icon size={16} /> {t.label}
                       </button>
                     ))}
@@ -225,12 +324,12 @@ export default function App() {
             {activeTab === 'blocks' && (
               <div className="space-y-4 pb-20 animate-in fade-in text-white">
                 <div className="flex justify-between items-center mb-2"><h4 className="text-[10px] font-black uppercase tracking-widest">Contenido</h4><button onClick={addBlock} className="bg-blue-600 p-1 rounded-lg"><Plus size={18}/></button></div>
-                {currentPage.blocks.map((b: Block, idx: number) => (
-                  <div key={b.id} draggable onDragStart={(e) => handleDragStart(e, b.id, 'block')} onDragOver={(e) => e.preventDefault()} onDrop={(e) => handleDrop(e, b.id, 'block')} className={`bg-zinc-900 border rounded-2xl overflow-hidden transition-all ${editingId === b.id ? 'border-blue-500' : 'border-slate-800'}`}>
+                {currentPage?.blocks.map((b: Block, idx: number) => (
+                  <div key={b.id} draggable onDragStart={(e) => handleDragStart(e, b.id, 'block')} onDragOver={(e) => e.preventDefault()} onDrop={(e) => handleDrop(e, b.id, 'block')} className={`bg-zinc-900 border rounded-2xl overflow-hidden transition-all ${editingId === b.id ? 'border-blue-500 shadow-xl' : 'border-slate-800'}`}>
                     <div className="p-3 flex items-center justify-between cursor-grab">
                       <div className="flex items-center gap-2">
                          <GripVertical size={12} className="opacity-30" />
-                         <span onClick={() => setEditingId(editingId === b.id ? null : b.id)} className="text-[9px] font-black uppercase text-zinc-500">{b.type}: {b.content.substring(0,10)}...</span>
+                         <span onClick={() => setEditingId(editingId === b.id ? null : b.id)} className="text-[9px] font-black uppercase text-zinc-500 truncate max-w-[150px]">{b.type}: {b.content.substring(0,10)}...</span>
                       </div>
                       <Settings onClick={() => setEditingId(editingId === b.id ? null : b.id)} size={12} className="text-zinc-600 cursor-pointer" />
                     </div>
@@ -239,14 +338,14 @@ export default function App() {
                          <select value={b.type} onChange={e => { const blocks = [...currentPage.blocks]; blocks[idx].type = e.target.value; setConfig({...config, pages: {...config.pages, [currentPageId]: {...currentPage, blocks}}}); }} className="w-full bg-zinc-900 border border-zinc-800 p-2 rounded text-[10px] text-white">
                             <option value="text">Texto</option><option value="image">Imagen</option><option value="video">Video</option><option value="html">HTML</option>
                          </select>
-                         <textarea value={b.content} onChange={e => { const blocks = [...currentPage.blocks]; blocks[idx].content = e.target.value; setConfig({...config, pages: {...config.pages, [currentPageId]: {...currentPage, blocks}}}); }} className="w-full bg-zinc-900 border border-zinc-800 p-2 rounded text-[10px] text-white min-h-[60px] outline-none" />
+                         <textarea value={b.content} onChange={e => { const blocks = [...currentPage.blocks]; blocks[idx].content = e.target.value; setConfig({...config, pages: {...config.pages, [currentPageId]: {...currentPage, blocks}}}); }} className="w-full bg-zinc-900 border border-zinc-800 p-2 rounded text-[10px] text-white min-h-[60px] outline-none focus:border-blue-500" />
                          <div className="grid grid-cols-2 gap-2">
-                           <select value={b.actionType} onChange={e => { const blocks = [...currentPage.blocks]; blocks[idx].actionType = e.target.value; setConfig({...config, pages: {...config.pages, [currentPageId]: {...currentPage, blocks}}}); }} className="w-full bg-zinc-900 p-2 rounded text-[9px] text-slate-500">
+                           <select value={b.actionType} onChange={e => { const blocks = [...currentPage.blocks]; blocks[idx].actionType = e.target.value; setConfig({...config, pages: {...config.pages, [currentPageId]: {...currentPage, blocks}}}); }} className="w-full bg-zinc-900 p-2 rounded text-[9px] text-slate-500 outline-none">
                              <option value="none">Sin Pista</option><option value="hover">Hover</option><option value="long-hover">3s</option><option value="triple-click">3 Clics</option>
                            </select>
-                           <select value={b.clueLink} onChange={e => { const blocks = [...currentPage.blocks]; blocks[idx].clueLink = e.target.value; setConfig({...config, pages: {...config.pages, [currentPageId]: {...currentPage, blocks}}}); }} className="w-full bg-zinc-900 p-2 rounded text-[9px] text-slate-500">
+                           <select value={b.clueLink} onChange={e => { const blocks = [...currentPage.blocks]; blocks[idx].clueLink = e.target.value; setConfig({...config, pages: {...config.pages, [currentPageId]: {...currentPage, blocks}}}); }} className="w-full bg-zinc-900 p-2 rounded text-[9px] text-slate-500 outline-none">
                              <option value="">Destino...</option>
-                             {config.pageOrder.map(pid => <option key={pid} value={pid}>{config.pages[pid].title}</option>)}
+                             {config.pageOrder.map(pid => <option key={pid} value={pid}>{config.pages[pid]?.title || pid}</option>)}
                            </select>
                          </div>
                          <button onClick={() => { const blocks = currentPage.blocks.filter(block => block.id !== b.id); setConfig({...config, pages: {...config.pages, [currentPageId]: {...currentPage, blocks}}}); }} className="w-full p-2 bg-red-600/10 text-red-500 text-[9px] font-black uppercase rounded-lg">Borrar</button>
@@ -263,10 +362,12 @@ export default function App() {
       {/* ÁREA DE PREVISUALIZACIÓN */}
       <main className="flex-1 flex flex-col overflow-hidden relative">
         {isDev && (
-          <div className="h-16 bg-white border-b border-zinc-200 flex items-center justify-between px-6 shrink-0 z-50 shadow-sm">
-            <button onClick={() => setSidebarOpen(!sidebarOpen)} className="p-2.5 bg-zinc-100 rounded-2xl text-zinc-900">{sidebarOpen ? <X size={20}/> : <Menu size={20}/>}</button>
-            <div className="text-[10px] font-black uppercase tracking-widest text-zinc-400">Modo Desarrollador</div>
-            <button onClick={() => setIsDev(false)} className="px-5 py-2 bg-zinc-950 text-white rounded-2xl text-[10px] font-black uppercase"><EyeOff size={14} className="inline mr-2"/> Salir</button>
+          <div className="h-16 bg-white border-b border-zinc-200 flex items-center justify-between px-6 shrink-0 z-50 shadow-sm transition-all duration-300">
+            <button onClick={() => setSidebarOpen(!sidebarOpen)} className="p-2.5 bg-zinc-100 rounded-2xl text-zinc-900 hover:bg-zinc-200 transition-all">{sidebarOpen ? <X size={20}/> : <Menu size={20}/>}</button>
+            <div className="text-[10px] font-black uppercase tracking-widest text-zinc-400 flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></span> Modo Edición
+            </div>
+            <button onClick={() => setIsDev(false)} className="px-5 py-2 bg-zinc-950 text-white rounded-2xl text-[10px] font-black uppercase shadow-lg active:scale-95 transition-all"><EyeOff size={14} className="inline mr-2"/> Finalizar</button>
           </div>
         )}
         <div className={`flex-1 overflow-y-auto scroll-smooth transition-all duration-700 ${isDev ? 'p-6 md:p-12' : 'p-0'}`}>
@@ -298,15 +399,15 @@ function PageRenderer({ page, isDev, onNavigate, onFooterClick, onSelectBlock, m
     'retro-tv': "theme-tv p-8 md:p-24 flex flex-col items-center min-h-full relative overflow-hidden"
   };
   return (
-    <div className={`${themes[page.theme] || themes.default} w-full transition-all duration-1000 select-none`}>
-      {page.theme === 'retro-tv' && <><div className="scanlines"></div><div className="flicker"></div></>}
+    <div className={`${themes[page?.theme] || themes.default} w-full transition-all duration-1000 select-none`}>
+      {page?.theme === 'retro-tv' && <><div className="scanlines"></div><div className="flicker"></div></>}
       <div className="w-full max-w-2xl space-y-20 pb-40 z-20 relative mx-auto">
         <header className="border-b-4 border-current pb-10 mb-20 animate-in slide-in-from-top duration-700">
-          <h1 className="text-4xl md:text-8xl font-black uppercase tracking-tighter leading-[0.85]">{page.title}</h1>
-          <div className="text-[10px] font-bold opacity-30 uppercase tracking-[0.5em]">{page.id}</div>
+          <h1 className="text-4xl md:text-8xl font-black uppercase tracking-tighter leading-[0.85]">{page?.title || "Sin Título"}</h1>
+          <div className="text-[10px] font-bold opacity-30 uppercase tracking-[0.5em]">{page?.id || "N/A"}</div>
         </header>
         <div className="space-y-24">
-          {page.blocks.map((b: Block) => (
+          {page?.blocks.map((b: Block) => (
             <div key={b.id} onClick={e => { if(isDev) { e.stopPropagation(); onSelectBlock(b.id); } }} className={isDev ? 'cursor-edit hover:ring-2 hover:ring-blue-500 rounded-2xl p-2 transition-all relative group' : ''}>
               {isDev && <Edit3 size={16} className="absolute -left-8 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 text-blue-500" />}
               <HiddenWrapper block={b} onNavigate={onNavigate} isDev={isDev}>
@@ -335,9 +436,9 @@ function HiddenWrapper({ block, children, onNavigate, isDev }: any) {
 
   return (
     <div onMouseEnter={onEnter} onMouseLeave={onLeave} onClick={onClick} className="relative transition-all duration-500">
-      <div className={`${revealed && block.clueLink ? 'opacity-10 blur-xl pointer-events-none' : 'transition-all duration-700'}`}>{children}</div>
+      <div className={`${revealed && block.clueLink ? 'opacity-10 blur-xl pointer-events-none scale-90' : 'transition-all duration-700'}`}>{children}</div>
       {revealed && block.clueLink && !isDev && (
-        <div className="absolute inset-0 flex items-center justify-center animate-in zoom-in duration-500 z-50">
+        <div className="absolute inset-0 flex items-center justify-center animate-in zoom-in fade-in duration-500 z-50">
            <button onClick={(e) => { e.stopPropagation(); onNavigate(block.clueLink); }} className="bg-black text-white px-10 py-5 rounded-full font-black uppercase text-xs tracking-widest shadow-2xl flex items-center gap-3 border border-white/20 transition-all hover:scale-110 active:scale-95"><Share2 size={16}/> DESCUBRIR</button>
         </div>
       )}
