@@ -18,7 +18,7 @@ interface Block {
   mouseIcon?: string;    
   audioUrl?: string;     
   posProps?: { top?: string; bottom?: string; left?: string; right?: string }; 
-  subBlock?: Block; // Nuevo: Componente anidado para apariciones o reemplazos
+  subBlock?: Block; // Componente anidado para apariciones o reemplazos
   options: { scale: number };
 }
 
@@ -97,7 +97,7 @@ export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [activeTab, setActiveTab] = useState('pages');
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [editingSubBlock, setEditingSubBlock] = useState(false); // Nuevo: Control de edición de hijos
+  const [editingSubBlock, setEditingSubBlock] = useState(false); 
   const [password, setPassword] = useState("");
   const [devClicks, setDevClicks] = useState(0);
   const [devMsg, setDevMsg] = useState("");
@@ -218,6 +218,35 @@ export default function App() {
     setConfig({ ...config, pages: { ...config.pages, [currentPageId]: { ...pg, blocks } } });
   };
 
+  // --- LÓGICA DE DRAG & DROP (RESTAURADA) ---
+  const handleDragStart = (e: React.DragEvent, id: string, type: 'page' | 'block') => {
+    e.dataTransfer.setData('id', id);
+    e.dataTransfer.setData('type', type);
+  };
+
+  const handleDrop = (e: React.DragEvent, targetId: string, type: 'page' | 'block') => {
+    const draggedId = e.dataTransfer.getData('id');
+    const draggedType = e.dataTransfer.getData('type');
+    if (draggedType !== type || draggedId === targetId) return;
+
+    if (type === 'page') {
+      const newOrder = [...config.pageOrder];
+      const fromIdx = newOrder.indexOf(draggedId);
+      const toIdx = newOrder.indexOf(targetId);
+      newOrder.splice(fromIdx, 1);
+      newOrder.splice(toIdx, 0, draggedId);
+      setConfig({ ...config, pageOrder: newOrder });
+    } else {
+      const pg = config.pages[currentPageId];
+      const blocks = [...pg.blocks];
+      const fromIdx = blocks.findIndex(b => b.id === draggedId);
+      const toIdx = blocks.findIndex(b => b.id === targetId);
+      const [draggedBlock] = blocks.splice(fromIdx, 1);
+      blocks.splice(toIdx, 0, draggedBlock);
+      setConfig({ ...config, pages: { ...config.pages, [currentPageId]: { ...pg, blocks } } });
+    }
+  };
+
   const currentPage = config.pages[currentPageId] || config.pages[config.homePageId];
 
   return (
@@ -287,7 +316,7 @@ export default function App() {
               </div>
             )}
 
-            {/* NUEVO TAB: ÁRBOL DE COMPONENTES */}
+            {/* TAB: ÁRBOL DE COMPONENTES */}
             {activeTab === 'tree' && (
               <div className="space-y-4 animate-in fade-in">
                 <h4 className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Estructura de Nodos: {currentPage.title}</h4>
@@ -318,7 +347,14 @@ export default function App() {
                   const blockToEdit = (isCurrent && editingSubBlock && b.subBlock) ? b.subBlock : b;
                   
                   return (
-                    <div key={b.id} className={`bg-zinc-900 border rounded-2xl overflow-hidden transition-all ${isCurrent ? 'border-blue-500 shadow-xl' : 'border-slate-800'}`}>
+                    <div 
+                      key={b.id} 
+                      draggable 
+                      onDragStart={(e) => handleDragStart(e, b.id, 'block')} 
+                      onDragOver={(e) => e.preventDefault()} 
+                      onDrop={(e) => handleDrop(e, b.id, 'block')}
+                      className={`bg-zinc-900 border rounded-2xl overflow-hidden transition-all cursor-grab ${isCurrent ? 'border-blue-500 shadow-xl' : 'border-slate-800'}`}
+                    >
                       <div className="p-3 flex items-center justify-between">
                         <div className="flex items-center gap-2">
                            <GripVertical size={12} className="opacity-30" />
@@ -454,6 +490,28 @@ export default function App() {
                     </div>
                   );
                 })}
+              </div>
+            )}
+
+            {activeTab === 'design' && (
+              <div className="space-y-6 animate-in fade-in">
+                <div className="space-y-4">
+                  <div>
+                    <label className="text-[10px] font-black uppercase text-zinc-600 block mb-2">Nombre de Página</label>
+                    <input value={currentPage?.title || ""} onChange={e => setConfig({...config, pages: {...config.pages, [currentPageId]: {...currentPage, title: e.target.value}}})} className="w-full bg-zinc-900 border border-zinc-800 p-3 rounded-xl text-xs text-white outline-none focus:border-blue-500" />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-black uppercase text-zinc-600 block mb-2">Imagen de Fondo (URL)</label>
+                    <input placeholder="https://..." value={currentPage?.backgroundImage || ""} onChange={e => setConfig({...config, pages: {...config.pages, [currentPageId]: {...currentPage, backgroundImage: e.target.value}}})} className="w-full bg-zinc-900 border border-zinc-800 p-3 rounded-xl text-xs text-white outline-none focus:border-blue-500" />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-black uppercase text-zinc-600 block mb-2">Visibilidad</label>
+                    <div className="grid grid-cols-2 gap-2">
+                       <button onClick={() => setConfig({...config, pages: {...config.pages, [currentPageId]: {...currentPage, no_pc: !currentPage.no_pc}}})} className={`p-2 rounded-xl border text-[10px] font-bold ${!currentPage.no_pc ? 'bg-emerald-600 border-emerald-500' : 'bg-zinc-900 border-zinc-800 text-zinc-500'}`}>PC</button>
+                       <button onClick={() => setConfig({...config, pages: {...config.pages, [currentPageId]: {...currentPage, no_mobile: !currentPage.no_mobile}}})} className={`p-2 rounded-xl border text-[10px] font-bold ${!currentPage.no_mobile ? 'bg-emerald-600 border-emerald-500' : 'bg-zinc-900 border-zinc-800 text-zinc-500'}`}>MÓVIL</button>
+                    </div>
+                  </div>
+                </div>
               </div>
             )}
           </div>
