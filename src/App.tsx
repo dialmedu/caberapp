@@ -95,7 +95,7 @@ function MaintBar({ label, val, max, color }: any) {
   );
 }
 
-// --- FORMULARIOS Y COMPONENTES DE VISTA ---
+// --- FORMULARIOS Y COMPONENTES DE LÓGICA ---
 
 function UnifiedPersonForm({ item, onSubmit, peopleList, title }: any) {
   const [formData, setFormData] = useState({
@@ -115,7 +115,6 @@ function UnifiedPersonForm({ item, onSubmit, peopleList, title }: any) {
   const handleQrInput = (e: React.FormEvent) => {
     e.preventDefault();
     if (!qrValue) return;
-    // Simulación: primer segmento es doc, el resto opcional
     const doc = qrValue.split('|')[0].replace(/\D/g, '') || qrValue;
     const existing = peopleList.find((p: any) => p.document === doc);
     if (existing) setFormData({ ...formData, ...existing });
@@ -146,7 +145,7 @@ function UnifiedPersonForm({ item, onSubmit, peopleList, title }: any) {
           <InputField label="Email" type="email" value={formData.email} onChange={(e: any) => setFormData({...formData, email: e.target.value})} />
         </div>
         <button type="submit" className="w-full bg-slate-900 text-white py-3 rounded font-black text-[10px] uppercase mt-4 tracking-widest hover:bg-indigo-600 transition-colors shadow-lg">
-          {title || "Registrar y Continuar"}
+          {title || "Registrar e Iniciar Visita"}
         </button>
       </form>
     </div>
@@ -191,7 +190,7 @@ function VisitDetailsView({ visit, data, updateData, triggerNotif, guides }: any
           {guides.map((g: any) => <option key={g.id} value={g.id}>{g.name}</option>)}
         </InputField>
         <div className="space-y-2">
-          <p className="text-[9px] font-black uppercase text-slate-400">Audioguías Vinculadas ({visit.equipmentIds.length})</p>
+          <p className="text-[9px] font-black uppercase text-slate-400">Equipos Asignados ({visit.equipmentIds.length})</p>
           <div className="space-y-1.5 mb-3 max-h-32 overflow-y-auto custom-scrollbar pr-1">
             {visit.equipmentIds.map((id: string) => (
               <div key={id} className="p-2 bg-slate-50 border rounded flex justify-between items-center text-[10px] font-black uppercase">
@@ -276,6 +275,35 @@ function GenericCRUDForm({ type, item, onSubmit }: any) {
   );
 }
 
+function PersonHistoryView({ person, visits }: any) {
+  const myVisits = visits.filter((v: any) => v.personId === person.id);
+  return (
+    <div className="space-y-4 animate-in fade-in duration-300 text-left">
+      <div className="border-b pb-2 flex justify-between items-end">
+        <div>
+          <h3 className="font-black text-xs uppercase leading-none mb-1 text-indigo-600">{person.name}</h3>
+          <p className="text-[8px] opacity-40 uppercase font-bold tracking-widest">{person.document}</p>
+        </div>
+        <span className="text-[10px] font-black text-indigo-600 uppercase">{myVisits.length} Visitas</span>
+      </div>
+      <div className="space-y-2 max-h-64 overflow-y-auto custom-scrollbar pr-1">
+        {myVisits.reverse().map((v: any) => (
+          <div key={v.id} className="p-2 border rounded bg-slate-50 flex justify-between items-center text-[10px]">
+            <div>
+              <p className="font-black uppercase text-slate-400 tracking-tighter">{v.date}</p>
+              <p className="font-bold opacity-60">EQ: {v.equipmentIds.join(', ') || 'Sin equipos'}</p>
+            </div>
+            <span className={`text-[7px] font-black uppercase px-2 py-0.5 rounded border ${v.status === 'active' ? 'bg-indigo-600 text-white' : 'bg-white text-slate-400'}`}>
+              {v.status}
+            </span>
+          </div>
+        ))}
+        {myVisits.length === 0 && <p className="text-center opacity-30 py-4 italic text-[10px]">Sin historial de visitas</p>}
+      </div>
+    </div>
+  );
+}
+
 function StatusDashboard({ data }: any) {
   return (
     <div className="space-y-4 animate-in fade-in duration-500">
@@ -299,7 +327,7 @@ const INITIAL_DATA = {
   })),
   visits: [],
   guides: [{ id: "G-101", name: "Elena Guía", license: "LIC-9988", phone: "555-0102", daysWorked: 12, type: 'guide' }],
-  loans: [] // Histórico plano para métricas
+  loans: [] 
 };
 
 const APP_STORAGE_KEY = "AUDIOGUIDE_PRO_V13_UXFIX";
@@ -412,7 +440,6 @@ export default function App() {
 
   return (
     <div className="h-screen w-full flex overflow-hidden bg-slate-100 font-sans text-slate-900 selection:bg-indigo-100">
-      {/* Sidebar Colapsable */}
       <aside className={`${isMenuCollapsed ? 'w-12' : 'w-48'} bg-slate-900 text-white flex flex-col transition-all duration-200 border-r border-slate-800 shrink-0`}>
         <div className="p-3 flex items-center justify-between border-b border-white/5">
           {!isMenuCollapsed && <span className="font-black text-[10px] uppercase truncate opacity-50 tracking-widest">{data.settings.appName}</span>}
@@ -430,7 +457,7 @@ export default function App() {
             </div>
           )}
         </div>
-        <div className="mt-auto p-1.5 border-t border-white/5 bg-black/20">
+        <div className="p-1.5 border-t border-white/5 bg-black/20">
            <NavItem icon={<LogOut size={16}/>} label="Salir" collapsed={isMenuCollapsed} onClick={() => setUserRole(null)} color="text-red-400 hover:bg-red-500/10" />
            {!isMenuCollapsed && (
              <div className="px-2 py-1 flex items-center justify-between mt-1 pt-1 border-t border-white/5 opacity-50">
@@ -442,18 +469,17 @@ export default function App() {
       </aside>
 
       <main className="flex-1 h-screen overflow-y-auto custom-scrollbar flex flex-col bg-slate-50/50">
-        {/* Header Dinámico según Vista */}
         <header className="h-10 bg-white border-b border-slate-200 px-6 flex items-center justify-between shrink-0 sticky top-0 z-40 shadow-sm">
-          <div className="flex items-center gap-2 text-[10px] font-black text-slate-300 uppercase tracking-widest">
+          <div className="flex items-center gap-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
             {userRole} <ChevronRight size={10}/> <span className="text-slate-900">{view}</span>
           </div>
           <div className="flex gap-2">
              <div className="relative flex items-center mr-2">
                 <Search size={10} className="absolute left-2 text-slate-400"/>
-                <input placeholder="Filtrar..." value={searchQuery} onChange={(e)=>setSearchQuery(e.target.value)} className="pl-6 pr-2 py-1 border rounded bg-slate-50 text-[9px] w-32 outline-none focus:border-indigo-400 transition-all shadow-inner" />
+                <input placeholder="Filtrar..." value={searchQuery} onChange={(e)=>setSearchQuery(e.target.value)} className="pl-6 pr-2 py-1 border rounded bg-slate-50 text-[9px] w-32 outline-none focus:border-indigo-400 focus:bg-white transition-all shadow-inner" />
              </div>
-             {view === 'inventory' && userRole === 'admin' && <button onClick={() => setModal({ type: 'inventory_crud' })} className="btn-compact bg-slate-900 text-white shadow-md"><Plus size={12}/> Nuevo Equipo</button>}
-             {view === 'guides' && userRole === 'admin' && <button onClick={() => setModal({ type: 'guide_crud' })} className="btn-compact bg-slate-900 text-white shadow-md"><Plus size={12}/> Nuevo Guía</button>}
+             {view === 'inventory' && userRole === 'admin' && <button onClick={() => setModal({ type: 'inventory_crud' })} className="btn-compact bg-slate-900 text-white shadow-md"><Plus size={12}/> Equipo</button>}
+             {view === 'guides' && userRole === 'admin' && <button onClick={() => setModal({ type: 'guide_crud' })} className="btn-compact bg-slate-900 text-white shadow-md"><Plus size={12}/> Guía</button>}
              {view === 'people' && <button onClick={() => setModal({ type: 'person_crud' })} className="btn-compact bg-indigo-600 text-white shadow-md"><Plus size={12}/> Persona</button>}
              <button onClick={() => setModal({ type: 'register_flow' })} className="btn-compact bg-indigo-600 text-white shadow-lg"><Plus size={12}/> Nueva Visita</button>
           </div>
@@ -533,7 +559,7 @@ export default function App() {
                     <tr key={p.id}>
                       <td className="table-cell font-black uppercase">{p.name} <p className="opacity-30 text-[8px] tracking-widest">{p.country}</p></td>
                       <td className="table-cell text-slate-400 font-medium">{p.document}</td>
-                      <td className="table-cell"><button onClick={() => setModal({ type: 'person_history', person: p })} className="px-2 py-0.5 bg-slate-100 rounded text-[8px] font-black uppercase hover:bg-indigo-600 hover:text-white transition-all">Ver Visitas</button></td>
+                      <td className="table-cell"><button onClick={() => setModal({ type: 'person_history', person: p })} className="px-2 py-0.5 bg-slate-100 rounded text-[8px] font-black uppercase hover:bg-indigo-600 hover:text-white transition-all shadow-sm">Ver Visitas</button></td>
                       <td className="table-cell text-right space-x-1">
                         <button onClick={() => setModal({ type: 'person_crud', item: p })} className="p-1 border rounded hover:bg-slate-50"><Edit2 size={12}/></button>
                         <button onClick={() => handleDelete('people', p.id)} className="p-1 border rounded hover:bg-red-50 text-red-400 transition-colors"><Trash2 size={12}/></button>
