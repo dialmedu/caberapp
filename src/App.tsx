@@ -791,19 +791,3 @@ export default function App() {
     </div>
   );
 }
-
-// --- LOGIN ---
-function LoginView({ onLogin }: any) {
-  return (
-    <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4">
-      <div className="max-w-xs w-full card-base p-10 text-center bg-white/5 border-white/10 backdrop-blur-xl">
-        <div className="p-4 bg-white rounded-xl inline-flex text-slate-900 mb-6 shadow-2xl scale-125"><Headphones size={32}/></div>
-        <h1 className="text-white font-black uppercase tracking-tighter text-2xl mb-8 leading-none text-center">AudioPro Admin</h1>
-        <div className="space-y-3">
-          <button onClick={() => onLogin('admin')} className="w-full p-3.5 border border-white/10 rounded hover:bg-white hover:text-slate-900 text-white font-black uppercase text-[10px] tracking-widest transition-all shadow-lg">Administrador</button>
-          <button onClick={() => onLogin('operator')} className="w-full p-3.5 border border-indigo-500/30 rounded bg-indigo-500/10 text-indigo-400 font-black uppercase text-[10px] tracking-widest transition-all hover:bg-indigo-500 hover:text-white shadow-lg">Operario</button>
-        </div>
-      </div>
-    </div>
-  );
-}
