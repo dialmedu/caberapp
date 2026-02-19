@@ -58,14 +58,14 @@ const INITIAL_DATA = {
 };
 
 const StorageService = {
-  saveLocal(data) {
+  saveLocal(data: any) {
     localStorage.setItem(APP_STORAGE_KEY, JSON.stringify(data));
   },
   loadLocal() {
     const saved = localStorage.getItem(APP_STORAGE_KEY);
     return saved ? JSON.parse(saved) : INITIAL_DATA;
   },
-  async syncToCloud(data) {
+  async syncToCloud(data: any) {
     return new Promise((resolve, reject) => {
       setTimeout(() => {
         if (Math.random() > 0.85) reject("Error de Red");
@@ -77,7 +77,7 @@ const StorageService = {
 
 // --- COMPONENTES AUXILIARES ---
 
-const Modal = ({ title, children, onClose }) => (
+const Modal = ({ title, children, onClose }: { title: string; children: React.ReactNode; onClose: () => void }) => (
   <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md flex items-center justify-center z-[100] p-4">
     <div className="bg-white rounded-[3rem] w-full max-w-3xl shadow-2xl overflow-hidden animate-in zoom-in duration-300 border border-white/20">
       <div className="p-8 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
@@ -92,19 +92,19 @@ const Modal = ({ title, children, onClose }) => (
 // --- APP PRINCIPAL ---
 
 export default function App() {
-  const [userRole, setUserRole] = useState(null);
-  const [data, setData] = useState(INITIAL_DATA);
+  const [userRole, setUserRole] = useState<string | null>(null);
+  const [data, setData] = useState<any>(INITIAL_DATA);
   const [view, setView] = useState('status');
   const [isSyncing, setIsSyncing] = useState(false);
-  const [notif, setNotif] = useState(null);
-  const [modal, setModal] = useState(null);
-  const [printData, setPrintData] = useState(null);
+  const [notif, setNotif] = useState<string | null>(null);
+  const [modal, setModal] = useState<any>(null);
+  const [printData, setPrintData] = useState<any>(null);
 
   useEffect(() => {
     setData(StorageService.loadLocal());
   }, []);
 
-  const updateData = (newData) => {
+  const updateData = (newData: any) => {
     setData(newData);
     StorageService.saveLocal(newData);
     handleManualSync(newData);
@@ -113,7 +113,7 @@ export default function App() {
   const handleManualSync = async (currentData = data) => {
     setIsSyncing(true);
     try {
-      const syncTime = await StorageService.syncToCloud(currentData);
+      const syncTime: any = await StorageService.syncToCloud(currentData);
       const updated = { ...currentData, syncMetadata: { lastSync: syncTime, status: 'synced' } };
       setData(updated);
       StorageService.saveLocal(updated);
@@ -128,22 +128,22 @@ export default function App() {
     }
   };
 
-  const triggerNotif = (msg) => {
+  const triggerNotif = (msg: string) => {
     setNotif(msg);
     setTimeout(() => setNotif(null), 4000);
   };
 
   // --- LOGICA CRUD ---
 
-  const handleEntityCRUD = (e, type, id = null) => {
+  const handleEntityCRUD = (e: React.FormEvent, type: string, id: string | null = null) => {
     e.preventDefault();
-    const formData = new FormData(e.target);
-    const obj = { id: id || `${type.charAt(0).toUpperCase()}-${Date.now()}` };
+    const formData = new FormData(e.target as HTMLFormElement);
+    const obj: any = { id: id || `${type.charAt(0).toUpperCase()}-${Date.now()}` };
     formData.forEach((value, key) => { obj[key] = value; });
 
     let newCollection;
     if (id) {
-      newCollection = data[type].map(v => v.id === id ? { ...v, ...obj } : v);
+      newCollection = data[type].map((v: any) => v.id === id ? { ...v, ...obj } : v);
     } else {
       if (type === 'inventory') {
         obj.status = 'available';
@@ -157,23 +157,24 @@ export default function App() {
     triggerNotif("Registro procesado correctamente");
   };
 
-  const handleDelete = (type, id) => {
+  const handleDelete = (type: string, id: string) => {
     if (!window.confirm("¿Confirmas la eliminación definitiva?")) return;
-    updateData({ ...data, [type]: data[type].filter(item => item.id !== id) });
+    updateData({ ...data, [type]: data[type].filter((item: any) => item.id !== id) });
     triggerNotif("Eliminado correctamente");
   };
 
   // --- LOGICA OPERATIVA ---
 
-  const handleAssignLoan = (e, entity, entityType) => {
+  const handleAssignLoan = (e: React.FormEvent, entity: any, entityType: string) => {
     e.preventDefault();
-    const barcode = new FormData(e.target).get('barcode');
-    const equipment = data.inventory.find(i => i.barcode === barcode);
+    const formData = new FormData(e.target as HTMLFormElement);
+    const barcode = formData.get('barcode');
+    const equipment = data.inventory.find((i: any) => i.barcode === barcode);
 
     if (!equipment) return triggerNotif("Error: El código no existe");
     if (equipment.status !== 'available') return triggerNotif("Equipo no disponible");
 
-    const newInventory = data.inventory.map(item => 
+    const newInventory = data.inventory.map((item: any) => 
       item.id === equipment.id ? { ...item, status: 'in_use', visitorId: entity.id } : item
     );
     const newLoan = {
@@ -191,12 +192,12 @@ export default function App() {
     setPrintData({ type: 'loan', entity, equipment, timestamp: newLoan.timestamp });
   };
 
-  const handleReceive = (equipmentId) => {
-    const equipment = data.inventory.find(i => i.id === equipmentId);
-    const newInventory = data.inventory.map(item => 
+  const handleReceive = (equipmentId: string) => {
+    const equipment = data.inventory.find((i: any) => i.id === equipmentId);
+    const newInventory = data.inventory.map((item: any) => 
       item.id === equipmentId ? { ...item, status: 'available', visitorId: null } : item
     );
-    const newLoans = data.loans.map(loan => 
+    const newLoans = data.loans.map((loan: any) => 
       (loan.equipmentId === equipmentId && !loan.returned) ? { ...loan, returned: true } : loan
     );
     updateData({ ...data, inventory: newInventory, loans: newLoans });
@@ -204,11 +205,11 @@ export default function App() {
     triggerNotif("Retorno registrado");
   };
 
-  const handleImportBackup = (e) => {
-    const file = e.target.files[0];
+  const handleImportBackup = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = (event) => {
+    reader.onload = (event: any) => {
       try {
         const imported = JSON.parse(event.target.result);
         updateData(imported);
@@ -347,9 +348,9 @@ export default function App() {
           {view === 'status' && (
             <div className="space-y-12 animate-in fade-in slide-in-from-bottom-6 duration-700">
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">
-                <StatCard label="En Uso" val={data.inventory.filter(i => i.status === 'in_use').length} color="bg-amber-500" icon={<History/>} />
-                <StatCard label="Libres" val={data.inventory.filter(i => i.status === 'available').length} color="bg-emerald-500" icon={<CheckCircle2/>} />
-                <StatCard label="En Taller" val={data.inventory.filter(i => i.status?.includes('maint')).length} color="bg-slate-400" icon={<Wrench/>} />
+                <StatCard label="En Uso" val={data.inventory.filter((i: any) => i.status === 'in_use').length} color="bg-amber-500" icon={<History/>} />
+                <StatCard label="Libres" val={data.inventory.filter((i: any) => i.status === 'available').length} color="bg-emerald-500" icon={<CheckCircle2/>} />
+                <StatCard label="En Taller" val={data.inventory.filter((i: any) => i.status?.includes('maint')).length} color="bg-slate-400" icon={<Wrench/>} />
                 <StatCard label="Visitas" val={data.loans.length} color="bg-indigo-600" icon={<Users/>} />
               </div>
               
@@ -357,17 +358,17 @@ export default function App() {
                  <div className="xl:col-span-2 bg-white p-12 rounded-[3.5rem] border border-slate-100 shadow-sm flex flex-col h-[500px]">
                     <h4 className="text-slate-300 font-black text-xs uppercase tracking-widest mb-10">Estado del Taller de Mantenimiento</h4>
                     <div className="flex-1 flex items-end gap-10">
-                       <MaintBar label="Pendientes" val={data.inventory.filter(i=>i.status==='maint_pending').length} max={data.inventory.length} color="bg-slate-200" />
-                       <MaintBar label="Reparación" val={data.inventory.filter(i=>i.status==='maint_repair').length} max={data.inventory.length} color="bg-red-400" />
-                       <MaintBar label="Repuestos" val={data.inventory.filter(i=>i.status==='maint_waiting').length} max={data.inventory.length} color="bg-amber-400" />
-                       <MaintBar label="Control QC" val={data.inventory.filter(i=>i.status==='maint_qc').length} max={data.inventory.length} color="bg-indigo-400" />
+                       <MaintBar label="Pendientes" val={data.inventory.filter((i: any)=>i.status==='maint_pending').length} max={data.inventory.length} color="bg-slate-200" />
+                       <MaintBar label="Reparación" val={data.inventory.filter((i: any)=>i.status==='maint_repair').length} max={data.inventory.length} color="bg-red-400" />
+                       <MaintBar label="Repuestos" val={data.inventory.filter((i: any)=>i.status==='maint_waiting').length} max={data.inventory.length} color="bg-amber-400" />
+                       <MaintBar label="Control QC" val={data.inventory.filter((i: any)=>i.status==='maint_qc').length} max={data.inventory.length} color="bg-indigo-400" />
                     </div>
                  </div>
                  <div className="bg-slate-900 p-10 rounded-[3.5rem] text-white flex flex-col shadow-2xl relative overflow-hidden">
                     <div className="absolute top-0 right-0 p-10 opacity-10"><BarChart3 size={120}/></div>
                     <h4 className="text-indigo-400 font-black text-xs uppercase tracking-widest mb-8">Últimas Visitas</h4>
                     <div className="flex-1 space-y-5 relative">
-                      {data.loans.slice(-4).reverse().map(l => (
+                      {data.loans.slice(-4).reverse().map((l: any) => (
                         <div key={l.id} className="flex items-center justify-between p-4 bg-white/5 rounded-2xl border border-white/5 group hover:bg-white/10 transition-all">
                           <div>
                             <p className="text-sm font-black">{l.equipmentId}</p>
@@ -397,7 +398,7 @@ export default function App() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-50">
-                    {data.inventory.map(item => (
+                    {data.inventory.map((item: any) => (
                       <tr key={item.id} className="group hover:bg-slate-50 transition-all">
                         <td className="px-10 py-8">
                           <div className="flex items-center gap-4">
@@ -437,7 +438,7 @@ export default function App() {
 
           {view === 'visitors' && (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 animate-in fade-in duration-500">
-              {data.visitors.map(v => (
+              {data.visitors.map((v: any) => (
                 <div key={v.id} className="bg-white p-10 rounded-[3.5rem] border border-slate-100 shadow-sm hover:shadow-2xl transition-all flex flex-col gap-8 group">
                   <div className="flex items-center justify-between">
                     <div className="w-20 h-20 bg-indigo-50 text-indigo-600 rounded-[2rem] flex items-center justify-center font-black text-3xl border-4 border-white shadow-inner">
@@ -464,7 +465,7 @@ export default function App() {
 
           {view === 'guides' && (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-              {data.guides.map(g => (
+              {data.guides.map((g: any) => (
                 <div key={g.id} className="bg-white p-10 rounded-[3.5rem] border border-slate-100 shadow-sm flex flex-col gap-8 group relative overflow-hidden">
                   <div className="absolute -top-4 -right-4 text-slate-50 opacity-0 group-hover:opacity-100 transition-opacity"><Briefcase size={120}/></div>
                   <div className="flex items-center justify-between relative">
@@ -486,7 +487,7 @@ export default function App() {
                         <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Días Trabajados</p>
                      </div>
                      <div className="bg-slate-50 p-5 rounded-3xl">
-                        <p className="text-3xl font-black text-slate-900 leading-none mb-1">{data.loans.filter(l => l.entityId === g.id && !l.returned).length}</p>
+                        <p className="text-3xl font-black text-slate-900 leading-none mb-1">{data.loans.filter((l: any) => l.entityId === g.id && !l.returned).length}</p>
                         <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Equipos Activos</p>
                      </div>
                   </div>
@@ -511,7 +512,7 @@ export default function App() {
                          <input type="text" className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl text-xs font-mono" value={data.settings.logo} onChange={(e)=>updateData({...data, settings:{...data.settings, logo: e.target.value}})} />
                       </div>
                       <div className="space-y-6">
-                         <InputField label="Nombre de Aplicación" value={data.settings.appName} onChange={(e)=>updateData({...data, settings:{...data.settings, appName: e.target.value}})} />
+                         <InputField label="Nombre de Aplicación" value={data.settings.appName} onChange={(e: any)=>updateData({...data, settings:{...data.settings, appName: e.target.value}})} />
                          <div className="pt-4">
                             <label className="block text-[10px] font-black text-slate-300 uppercase tracking-widest mb-4">Mantenimiento de Datos</label>
                             <button onClick={()=>{
@@ -538,9 +539,9 @@ export default function App() {
                    <div className="bg-white p-12 rounded-[4rem] border border-slate-100 shadow-sm">
                       <h4 className="text-[10px] font-black text-slate-300 uppercase tracking-widest mb-10">Demografía de Visitantes</h4>
                       <div className="space-y-8">
-                         <StatBarMini label="Nacionales (España)" val={data.visitors.filter(v=>v.country==='España').length} total={data.visitors.length} color="bg-indigo-600" />
-                         <StatBarMini label="Internacionales" val={data.visitors.filter(v=>v.country!=='España').length} total={data.visitors.length} color="bg-emerald-500" />
-                         <StatBarMini label="Visitantes Adultos (>18)" val={data.visitors.filter(v=>v.age>=18).length} total={data.visitors.length} color="bg-amber-500" />
+                         <StatBarMini label="Nacionales (España)" val={data.visitors.filter((v: any)=>v.country==='España').length} total={data.visitors.length} color="bg-indigo-600" />
+                         <StatBarMini label="Internacionales" val={data.visitors.filter((v: any)=>v.country!=='España').length} total={data.visitors.length} color="bg-emerald-500" />
+                         <StatBarMini label="Visitantes Adultos (>18)" val={data.visitors.filter((v: any)=>v.age>=18).length} total={data.visitors.length} color="bg-amber-500" />
                       </div>
                    </div>
                    <div className="bg-slate-900 p-12 rounded-[4rem] text-white flex flex-col justify-center items-center text-center relative overflow-hidden">
@@ -548,7 +549,7 @@ export default function App() {
                       <div className="p-6 bg-white/10 rounded-[2.5rem] mb-6"><ShieldCheck size={48} className="text-emerald-400"/></div>
                       <h3 className="text-3xl font-black uppercase tracking-tighter mb-2">Seguridad de Activos</h3>
                       <p className="text-slate-400 text-sm max-w-xs font-bold">Tienes un total de {data.inventory.length} equipos bajo control estricto.</p>
-                      <div className="mt-8 text-6xl font-black tracking-tighter">{((data.inventory.filter(i=>i.status==='available').length / data.inventory.length)*100).toFixed(0)}%</div>
+                      <div className="mt-8 text-6xl font-black tracking-tighter">{((data.inventory.filter((i: any)=>i.status==='available').length / data.inventory.length)*100).toFixed(0)}%</div>
                       <p className="text-[10px] font-black text-indigo-400 uppercase tracking-widest mt-2">Disponibilidad de Flota</p>
                    </div>
                 </div>
@@ -601,29 +602,29 @@ export default function App() {
                     <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-6 flex items-center gap-2"><Settings size={16}/> Cambiar Estado Operativo</p>
                     <div className="grid grid-cols-2 gap-3">
                        <MaintStateBtn active={modal.item.status === 'available'} color="bg-emerald-500" label="Disponible" onClick={()=> {
-                          const newInv = data.inventory.map(i=>i.id===modal.item.id ? {...i, status:'available'} : i);
+                          const newInv = data.inventory.map((i: any)=>i.id===modal.item.id ? {...i, status:'available'} : i);
                           updateData({...data, inventory: newInv});
-                          setModal({...modal, item: newInv.find(i=>i.id===modal.item.id)});
+                          setModal({...modal, item: newInv.find((i: any)=>i.id===modal.item.id)});
                        }} />
                        <MaintStateBtn active={modal.item.status === 'maint_pending'} color="bg-slate-400" label="En Cola" onClick={()=> {
-                          const newInv = data.inventory.map(i=>i.id===modal.item.id ? {...i, status:'maint_pending'} : i);
+                          const newInv = data.inventory.map((i: any)=>i.id===modal.item.id ? {...i, status:'maint_pending'} : i);
                           updateData({...data, inventory: newInv});
-                          setModal({...modal, item: newInv.find(i=>i.id===modal.item.id)});
+                          setModal({...modal, item: newInv.find((i: any)=>i.id===modal.item.id)});
                        }} />
                        <MaintStateBtn active={modal.item.status === 'maint_repair'} color="bg-red-500" label="Reparando" onClick={()=> {
-                          const newInv = data.inventory.map(i=>i.id===modal.item.id ? {...i, status:'maint_repair'} : i);
+                          const newInv = data.inventory.map((i: any)=>i.id===modal.item.id ? {...i, status:'maint_repair'} : i);
                           updateData({...data, inventory: newInv});
-                          setModal({...modal, item: newInv.find(i=>i.id===modal.item.id)});
+                          setModal({...modal, item: newInv.find((i: any)=>i.id===modal.item.id)});
                        }} />
                        <MaintStateBtn active={modal.item.status === 'maint_waiting'} color="bg-amber-500" label="Repuestos" onClick={()=> {
-                          const newInv = data.inventory.map(i=>i.id===modal.item.id ? {...i, status:'maint_waiting'} : i);
+                          const newInv = data.inventory.map((i: any)=>i.id===modal.item.id ? {...i, status:'maint_waiting'} : i);
                           updateData({...data, inventory: newInv});
-                          setModal({...modal, item: newInv.find(i=>i.id===modal.item.id)});
+                          setModal({...modal, item: newInv.find((i: any)=>i.id===modal.item.id)});
                        }} />
                        <MaintStateBtn active={modal.item.status === 'maint_qc'} color="bg-indigo-500" label="Control QC" onClick={()=> {
-                          const newInv = data.inventory.map(i=>i.id===modal.item.id ? {...i, status:'maint_qc'} : i);
+                          const newInv = data.inventory.map((i: any)=>i.id===modal.item.id ? {...i, status:'maint_qc'} : i);
                           updateData({...data, inventory: newInv});
-                          setModal({...modal, item: newInv.find(i=>i.id===modal.item.id)});
+                          setModal({...modal, item: newInv.find((i: any)=>i.id===modal.item.id)});
                        }} />
                     </div>
                  </div>
@@ -631,10 +632,10 @@ export default function App() {
                  <div className="bg-white p-8 rounded-[3rem] border border-slate-100">
                     <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-6 flex items-center gap-2"><History size={16}/> Historial de Préstamos</p>
                     <div className="space-y-4 max-h-48 overflow-y-auto custom-scrollbar pr-2 text-left">
-                       {data.loans.filter(l => l.equipmentId === modal.item.id).length === 0 ? <p className="text-xs text-slate-300 italic">Sin actividad registrada.</p> : 
-                         data.loans.filter(l => l.equipmentId === modal.item.id).reverse().map(l => (
+                       {data.loans.filter((l: any) => l.equipmentId === modal.item.id).length === 0 ? <p className="text-xs text-slate-300 italic">Sin actividad registrada.</p> : 
+                         data.loans.filter((l: any) => l.equipmentId === modal.item.id).reverse().map((l: any) => (
                            <div key={l.id} className="text-[11px] font-bold p-4 bg-slate-50 rounded-2xl flex justify-between">
-                              <span className="text-slate-800">{l.entityType === 'visitor' ? 'VIS' : 'GUÍA'}: {data[l.entityType === 'visitor' ? 'visitors' : 'guides'].find(e => e.id === l.entityId)?.name || 'N/A'}</span>
+                              <span className="text-slate-800">{l.entityType === 'visitor' ? 'VIS' : 'GUÍA'}: {data[l.entityType === 'visitor' ? 'visitors' : 'guides'].find((e: any) => e.id === l.entityId)?.name || 'N/A'}</span>
                               <span className="text-slate-400">{new Date(l.timestamp).toLocaleDateString()}</span>
                            </div>
                          ))
@@ -647,7 +648,7 @@ export default function App() {
                  <div className="flex-1 bg-white p-10 rounded-[3rem] border-2 border-slate-100 flex flex-col">
                     <p className="text-[10px] font-black text-slate-400 uppercase mb-8 tracking-widest flex items-center gap-2"><Hammer size={16}/> Registro Técnico de Taller</p>
                     <div className="flex-1 space-y-4 mb-8 overflow-y-auto custom-scrollbar pr-2">
-                       {modal.item.maintenanceLogs.map((log) => (
+                       {modal.item.maintenanceLogs.map((log: any) => (
                          <div key={log.id} className="text-xs bg-slate-50 p-5 rounded-2xl border border-slate-100 relative text-left">
                             <span className="absolute -top-2 left-4 px-2 bg-white text-[9px] font-black text-slate-300 rounded border border-slate-50">{log.date}</span>
                             <p className="font-bold text-slate-700 leading-relaxed">{log.notes}</p>
@@ -658,12 +659,13 @@ export default function App() {
                     <div className="flex gap-3">
                        <textarea id="maint-input" placeholder="Nueva anotación técnica..." className="flex-1 p-5 bg-slate-50 rounded-3xl border border-slate-100 text-sm outline-none focus:border-indigo-600 transition-all" />
                        <button onClick={() => {
-                         const note = document.getElementById('maint-input').value;
+                         const noteEl = document.getElementById('maint-input') as HTMLTextAreaElement;
+                         const note = noteEl.value;
                          if (!note) return;
-                         const newInv = data.inventory.map(item => item.id === modal.item.id ? { ...item, maintenanceLogs: [...item.maintenanceLogs, { id: Date.now(), date: new Date().toISOString().split('T')[0], notes: note, statusAtTime: item.status }] } : item);
+                         const newInv = data.inventory.map((item: any) => item.id === modal.item.id ? { ...item, maintenanceLogs: [...item.maintenanceLogs, { id: Date.now(), date: new Date().toISOString().split('T')[0], notes: note, statusAtTime: item.status }] } : item);
                          updateData({ ...data, inventory: newInv });
-                         setModal({ ...modal, item: newInv.find(i => i.id === modal.item.id) });
-                         document.getElementById('maint-input').value = "";
+                         setModal({ ...modal, item: newInv.find((i: any) => i.id === modal.item.id) });
+                         noteEl.value = "";
                        }} className="bg-slate-900 text-white p-5 rounded-3xl hover:bg-indigo-600 transition-all shadow-lg"><Plus size={24}/></button>
                     </div>
                  </div>
@@ -722,13 +724,13 @@ export default function App() {
 
 // --- SUBCOMPONENTES ESTILO ---
 
-const NavItem = ({ icon, label, active, onClick }) => (
+const NavItem = ({ icon, label, active, onClick }: { icon: any; label: string; active: boolean; onClick: () => void }) => (
   <button onClick={onClick} className={`w-full flex items-center gap-4 p-5 rounded-[1.5rem] transition-all font-black text-xs uppercase tracking-[0.15em] ${active ? 'bg-indigo-600 text-white shadow-2xl shadow-indigo-900/40 translate-x-2' : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'}`}>
     {React.cloneElement(icon, { size: 20, strokeWidth: 2.5 })} {label}
   </button>
 );
 
-const StatCard = ({ label, val, color, icon }) => (
+const StatCard = ({ label, val, color, icon }: { label: string; val: number | string; color: string; icon: any }) => (
   <div className="bg-white p-10 rounded-[3rem] border border-slate-100 shadow-sm relative overflow-hidden group hover:scale-[1.02] transition-all">
     <div className={`absolute -top-4 -right-4 p-10 opacity-5 group-hover:opacity-10 transition-all ${color.replace('bg-', 'text-')}`}>{icon}</div>
     <p className="text-6xl font-black text-slate-900 mb-2 tracking-tighter">{val}</p>
@@ -739,8 +741,8 @@ const StatCard = ({ label, val, color, icon }) => (
   </div>
 );
 
-const StatusBadge = ({ status }) => {
-  const cfg = {
+const StatusBadge = ({ status }: { status: string }) => {
+  const cfg: any = {
     available: { label: 'Disponible', class: 'bg-emerald-50 text-emerald-700 border-emerald-100' },
     in_use: { label: 'En Uso', class: 'bg-amber-50 text-amber-700 border-amber-100' },
     maint_pending: { label: 'Cola Taller', class: 'bg-slate-100 text-slate-500 border-slate-200' },
@@ -756,7 +758,7 @@ const StatusBadge = ({ status }) => {
   );
 };
 
-const RoleButton = ({ onClick, icon, label, desc, color }) => (
+const RoleButton = ({ onClick, icon, label, desc, color }: { onClick: () => void; icon: any; label: string; desc: string; color: string }) => (
   <button onClick={onClick} className={`w-full p-8 rounded-[2.5rem] border-2 flex items-center gap-8 transition-all group shadow-sm hover:shadow-2xl hover:-translate-y-1 ${color}`}>
     <div className="p-5 bg-white/10 rounded-3xl transition-all group-hover:scale-110">
        {React.cloneElement(icon, { size: 32 })}
@@ -768,7 +770,7 @@ const RoleButton = ({ onClick, icon, label, desc, color }) => (
   </button>
 );
 
-const InputField = ({ label, ...props }) => (
+const InputField = ({ label, ...props }: { label: string; [key: string]: any }) => (
   <div className="w-full">
     <label className="block text-[10px] font-black text-slate-300 uppercase tracking-[0.2em] mb-3 ml-3">{label}</label>
     <input 
@@ -778,7 +780,7 @@ const InputField = ({ label, ...props }) => (
   </div>
 );
 
-const MaintBar = ({ label, val, max, color }) => {
+const MaintBar = ({ label, val, max, color }: { label: string; val: number; max: number; color: string }) => {
   const pct = max > 0 ? (val / max) * 100 : 0;
   return (
     <div className="flex-1 flex flex-col items-center gap-4 group">
@@ -794,7 +796,7 @@ const MaintBar = ({ label, val, max, color }) => {
   );
 };
 
-const StatBarMini = ({ label, val, total, color }) => {
+const StatBarMini = ({ label, val, total, color }: { label: string; val: number; total: number; color: string }) => {
   const pct = total > 0 ? (val / total) * 100 : 0;
   return (
     <div className="space-y-3">
@@ -809,7 +811,7 @@ const StatBarMini = ({ label, val, total, color }) => {
   );
 };
 
-const MaintStateBtn = ({ active, color, label, onClick }) => (
+const MaintStateBtn = ({ active, color, label, onClick }: { active: boolean; color: string; label: string; onClick: () => void }) => (
   <button onClick={onClick} className={`p-4 rounded-2xl border-2 transition-all text-left flex flex-col gap-1 ${active ? `${color} text-white border-transparent shadow-lg shadow-slate-200` : 'bg-white border-slate-100 text-slate-400 hover:border-slate-300'}`}>
      <span className={`w-3 h-3 rounded-full ${active ? 'bg-white' : color} mb-2`} />
      <span className="text-[10px] font-black uppercase tracking-widest leading-none">{label}</span>
