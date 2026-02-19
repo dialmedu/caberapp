@@ -28,8 +28,8 @@ interface Person { id: string; name: string; document: string; country: string; 
 interface Visit { 
   id: string; 
   personId: string; 
-  equipmentIds: string[]; // Aquí guardamos los IDs de los modelos/códigos asignados
-  equipmentQty: { [key: string]: number }; // Mapa de ID de equipo a cantidad asignada
+  equipmentIds: string[]; 
+  equipmentQty: { [key: string]: number }; 
   startTime: string; 
   endTime?: string; 
   status: 'active' | 'finished';
@@ -46,7 +46,38 @@ interface Tour {
   name: string;
 }
 
-// --- SUBCOMPONENTES DE UI ---
+// --- DATOS INICIALES Y CONSTANTES ---
+const APP_STORAGE_KEY = "AUDIOGUIDE_PRO_V21_BUILD_FIX";
+const INITIAL_DATA = {
+  settings: { 
+    logo: "https://via.placeholder.com/100?text=LOGO", 
+    terms: "Contrato de responsabilidad por equipos...", 
+    appName: "AudioPro Admin",
+    timerThresholds: { green: 5, yellow: 10, red: 15 }
+  },
+  syncMetadata: { lastSync: null, status: 'synced' },
+  people: [{ id: "P-101", name: "Carlos Perez", document: "12345678", country: "España", age: 34, email: "carlos@mail.com", phone: "600000000", type: 'visitor' }],
+  inventory: [{ 
+    id: "ST-01", model: "Premium V4", status: "available", barcode: "1001", 
+    maintenanceLogs: [], kardex: [], stockTotal: 10, stockAvailable: 10, stockInUse: 0 
+  }],
+  visits: [],
+  tours: [],
+  guides: [{ id: "G-101", name: "Elena Guía", license: "LIC-9988", phone: "555-0102", daysWorked: 12, type: 'guide' }],
+  loans: [] 
+};
+
+// --- SERVICIO DE PERSISTENCIA (DEFINIDO ANTES DE SU USO) ---
+const StorageService = {
+  saveLocal(data: any) { localStorage.setItem(APP_STORAGE_KEY, JSON.stringify(data)); },
+  loadLocal() {
+    const saved = localStorage.getItem(APP_STORAGE_KEY);
+    try { return saved ? JSON.parse(saved) : INITIAL_DATA; } catch { return INITIAL_DATA; }
+  },
+  async syncToCloud(data: any) { return new Promise((res) => setTimeout(() => res(new Date().toISOString()), 600)); }
+};
+
+// --- SUBCOMPONENTES DE UI BASE ---
 
 function NavItem({ icon, label, active, collapsed, onClick, color = "text-slate-400 hover:bg-white/5" }: any) {
   return (
@@ -81,6 +112,18 @@ function InputField({ label, ...props }: any) {
   );
 }
 
+function StatCard({ label, val, color, icon }: any) {
+  return (
+    <div className="bg-white p-3 card-base flex items-center justify-between border-slate-200 shadow-none">
+      <div>
+        <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">{label}</p>
+        <p className={`text-xl font-black ${color || 'text-slate-900'} leading-none`}>{val}</p>
+      </div>
+      <div className="opacity-10">{icon}</div>
+    </div>
+  );
+}
+
 function VisitTimer({ startTime, thresholds, showLabel = true }: { startTime: string, thresholds: any, showLabel?: boolean }) {
   const [elapsed, setElapsed] = useState(0);
   useEffect(() => {
@@ -100,7 +143,31 @@ function VisitTimer({ startTime, thresholds, showLabel = true }: { startTime: st
   );
 }
 
-// --- COMPONENTES DE LÓGICA Y VISTAS ---
+function Pagination({ total, current, perPage, onChange }: any) {
+  const pages = Math.ceil(total / perPage);
+  if (pages <= 1) return null;
+  return (
+    <div className="flex items-center gap-1 justify-end mt-2 p-1">
+      <button disabled={current === 1} onClick={() => onChange(current - 1)} className="p-1 border rounded disabled:opacity-30"><ChevronLeft size={10}/></button>
+      <span className="text-[9px] font-bold text-slate-400 uppercase tracking-tighter">Pág {current} de {pages}</span>
+      <button disabled={current === pages} onClick={() => onChange(current + 1)} className="p-1 border rounded disabled:opacity-30"><ChevronRight size={10}/></button>
+    </div>
+  );
+}
+
+function MaintBar({ label, val, max, color }: any) {
+  const pct = max > 0 ? (val / max) * 100 : 0;
+  return (
+    <div className="flex-1 flex flex-col items-center gap-2 h-full justify-end">
+       <div className="w-full h-full max-h-[120px] bg-slate-50 rounded border relative flex items-end overflow-hidden">
+         <div className={`w-full transition-all duration-700 ${color}`} style={{ height: `${pct}%` }} />
+       </div>
+       <span className="text-[8px] font-bold text-slate-400 uppercase text-center leading-none">{label}<br/>({val})</span>
+    </div>
+  );
+}
+
+// --- COMPONENTES DE LÓGICA DE NEGOCIO ---
 
 function EquipmentKardexView({ item, data, updateData, triggerNotif, refreshModal }: any) {
   const [qty, setQty] = useState(1);
@@ -278,7 +345,7 @@ function VisitDetailsView({ visit, data, updateData, triggerNotif, guides, thres
           <div className="space-y-1.5 max-h-32 overflow-y-auto custom-scrollbar pr-1">
             {visit.equipmentIds.map((id: string) => (
               <div key={id} className="p-2 bg-slate-50 border rounded flex justify-between items-center text-[10px] font-black uppercase">
-                 <span className="flex items-center gap-2"><Headphones size={12}/> {id} <span className="text-indigo-600">x{visit.equipmentQty?.[id] || 1}</span></span>
+                 <span className="flex items-center gap-2"><Headphones size={12}/> {id} <span className="text-indigo-600">x{(visit.equipmentQty?.[id] as number) || 1}</span></span>
                  <button onClick={() => removeUnits(id)} title="Devolver 1 unidad" className="text-red-400 p-1 hover:text-red-600 transition-colors"><X size={12}/></button>
               </div>
             ))}
@@ -339,7 +406,7 @@ function TourManagerView({ data, onComplete, triggerNotif }: any) {
                 <tr key={i}>
                   <td className="p-2 font-bold uppercase truncate max-w-[100px]">{m.name}</td>
                   <td className="p-2"><input type="number" value={m.qty} onChange={(e)=>updateMemberData(i, 'qty', parseInt(e.target.value))} className="w-full bg-slate-50 border rounded p-1 text-center" min="1" /></td>
-                  <td className="p-2"><input placeholder="Scan..." className="w-full bg-slate-50 border rounded p-1 font-black" onBlur={(e)=>updateMemberData(i, 'bc', e.target.value)} /></td>
+                  <td className="p-2"><input placeholder="Scan..." className="w-full bg-slate-50 border rounded p-1 font-black uppercase" onBlur={(e)=>updateMemberData(i, 'bc', e.target.value)} /></td>
                   <td className="p-2 text-right"><button onClick={()=>setMembers(members.filter((_,idx)=>idx!==i))} className="text-red-300"><X size={12}/></button></td>
                 </tr>
               ))}
@@ -379,12 +446,11 @@ function TourDetailsView({ tour, data, onFinishTour, onFinishVisit, thresholds }
                   <th className="p-2 text-right">Acción</th>
                 </tr>
              </thead>
-             <tbody className="divide-y divide-slate-50">
+             <tbody className="divide-y divide-slate-100">
                 {tourVisits.map((v: any) => {
                   const p = data.people.find((pers: any) => pers.id === v.personId);
                   const active = v.status === 'active';
-                  const totalQty = Object.values(v.equipmentQty || {}).reduce((acc: any, curr: any) => acc + curr, 0);
-                  return (
+                  const totalQty = Object.values(v.equipmentQty as Record<string, number>).reduce((acc, curr) => acc + curr, 0);                  return (
                     <tr key={v.id} className={!active ? 'opacity-40 grayscale bg-slate-50/50' : 'hover:bg-slate-50/20'}>
                        <td className="p-2 font-bold uppercase">{p?.name}</td>
                        <td className="p-2 font-black">{totalQty} und</td>
@@ -491,26 +557,20 @@ function PersonHistoryView({ person, visits }: any) {
   );
 }
 
-// --- CONSTANTES Y DATOS INICIALES ---
-
-const INITIAL_DATA = {
-  settings: { 
-    logo: "https://via.placeholder.com/100?text=LOGO", 
-    terms: "Contrato de equipos...", 
-    appName: "AudioPro Admin",
-    timerThresholds: { green: 5, yellow: 10, red: 15 }
-  },
-  syncMetadata: { lastSync: null, status: 'synced' },
-  people: [{ id: "P-101", name: "Carlos Perez", document: "12345678", country: "España", age: 34, email: "carlos@mail.com", phone: "600000000", type: 'visitor' }],
-  inventory: [{ 
-    id: "ST-01", model: "Premium V4", status: "available", barcode: "1001", 
-    maintenanceLogs: [], kardex: [], stockTotal: 10, stockAvailable: 10, stockInUse: 0 
-  }],
-  visits: [],
-  tours: [],
-  guides: [{ id: "G-101", name: "Elena Guía", license: "LIC-9988", phone: "555-0102", daysWorked: 12, type: 'guide' }],
-  loans: [] 
-};
+function LoginView({ onLogin }: any) {
+  return (
+    <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4">
+      <div className="max-w-xs w-full card-base p-10 text-center bg-white/5 border-white/10 backdrop-blur-xl">
+        <div className="p-4 bg-white rounded-xl inline-flex text-slate-900 mb-6 shadow-2xl scale-125"><Headphones size={32}/></div>
+        <h1 className="text-white font-black uppercase tracking-tighter text-2xl mb-8 leading-none">AudioPro Admin</h1>
+        <div className="space-y-3">
+          <button onClick={() => onLogin('admin')} className="w-full p-3.5 border border-white/10 rounded hover:bg-white hover:text-slate-900 text-white font-black uppercase text-[10px] tracking-widest transition-all shadow-lg">Administrador</button>
+          <button onClick={() => onLogin('operator')} className="w-full p-3.5 border border-indigo-500/30 rounded bg-indigo-500/10 text-indigo-400 font-black uppercase text-[10px] tracking-widest transition-all hover:bg-indigo-500 hover:text-white shadow-lg">Operario</button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // --- COMPONENTE PRINCIPAL APP ---
 
@@ -525,7 +585,7 @@ export default function App() {
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
   const [searchQuery, setSearchQuery] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 20;
+  const itemsPerPage = 15;
 
   useEffect(() => { setData(StorageService.loadLocal()); }, []);
 
@@ -779,8 +839,10 @@ export default function App() {
                     return (
                       <div key={visit.id} onClick={() => setModal({ type: 'visit_details', visit })} className={`card-base p-3 flex flex-col gap-3 cursor-pointer transition-all hover:border-indigo-400 ${visit.status === 'finished' ? 'opacity-40 grayscale bg-slate-50' : 'bg-white shadow-sm'}`}>
                         <div className="flex justify-between items-start">
-                          <div className="w-8 h-8 bg-slate-100 text-slate-500 rounded flex items-center justify-center font-bold border text-[9px] uppercase">{person?.name?.charAt(0) || '?'}</div>
-                          {visit.status === 'active' ? <VisitTimer startTime={visit.startTime} thresholds={data.settings.timerThresholds} /> : <StatusBadge status="finished" />}
+                          <div className="w-8 h-8 bg-slate-100 text-slate-500 rounded flex items-center justify-center font-bold border text-[10px] uppercase">{person?.name?.charAt(0) || '?'}</div>
+                          <div className="flex flex-col items-end gap-1">
+                             {visit.status === 'active' ? <VisitTimer startTime={visit.startTime} thresholds={data.settings.timerThresholds} /> : <StatusBadge status="finished" />}
+                          </div>
                         </div>
                         <div className="flex-1 min-h-[40px]"><p className="font-black text-[10px] truncate uppercase">{person?.name || 'Cargando...'}</p><div className="flex flex-wrap gap-1 mt-1.5">{visit.equipmentIds.map((eid: string, idx: number) => <span key={idx} className="px-1.5 py-0.5 bg-slate-900 text-white rounded text-[7px] font-black border uppercase">{eid} x{visit.equipmentQty?.[eid] || 1}</span>)}</div></div>
                         <div className="text-[7px] font-black uppercase text-center text-slate-400 py-1 bg-slate-50 rounded">Gestión Detallada</div>
@@ -911,42 +973,27 @@ export default function App() {
               <button onClick={() => setModal(null)} className="p-1 hover:bg-white/10 rounded transition-colors"><X size={14}/></button>
             </div>
             <div className="p-4 overflow-y-auto custom-scrollbar flex-1 bg-white">
-               {modal.type === 'register_flow' && <UnifiedPersonForm peopleList={data.people} onSubmit={handleSaveVisitFlow} />}
                {modal.type === 'create_tour' && <TourManagerView data={data} onComplete={handleCreateTour} triggerNotif={triggerNotif} />}
                {modal.type === 'tour_details' && <TourDetailsView tour={modal.tour} data={data} onFinishTour={handleFinishTour} onFinishVisit={handleFinishVisit} thresholds={data.settings.timerThresholds} />}
+               {modal.type === 'register_flow' && <UnifiedPersonForm peopleList={data.people} onSubmit={handleSaveVisitFlow} />}
+               {modal.type === 'person_crud' && <UnifiedPersonForm item={modal.item} peopleList={data.people} title="Actualizar Persona" onSubmit={(fd:any) => handleSaveEntity('people', fd, modal.item?.id)} />}
                {modal.type === 'visit_details' && (
                  <div className="space-y-6 text-left">
                     <VisitDetailsView visit={modal.visit} data={data} updateData={updateData} triggerNotif={triggerNotif} guides={data.guides} thresholds={data.settings.timerThresholds} />
-                    <button onClick={() => handleFinishVisit(modal.visit.id)} className="w-full bg-slate-900 text-white py-3 rounded font-black text-[10px] uppercase shadow-lg hover:bg-red-600 transition-colors">Finalizar y Liberar</button>
+                    <div className="pt-4 border-t flex flex-col gap-2">
+                       <button onClick={() => handleFinishVisit(modal.visit.id)} className="w-full bg-slate-900 text-white py-3 rounded font-black text-[10px] uppercase shadow-lg hover:bg-red-600 transition-colors">Finalizar y Liberar</button>
+                    </div>
                  </div>
                )}
                {modal.type === 'equipment_sheet' && <EquipmentKardexView item={modal.item} data={data} updateData={updateData} triggerNotif={triggerNotif} refreshModal={(i:any)=>setModal({...modal, item:i})} />}
                {modal.type === 'equipment_details' && <EquipmentSheet item={modal.item} data={data} updateData={updateData} refreshModal={(i:any)=>setModal({...modal, item:i})} />}
                {modal.type === 'inventory_crud' && <GenericCRUDForm type="inventory" item={modal.item} onSubmit={(fd:any) => handleSaveEntity('inventory', fd, modal.item?.id)} />}
-               {modal.type === 'person_crud' && <UnifiedPersonForm item={modal.item} peopleList={data.people} title="Actualizar Datos" onSubmit={(fd:any) => handleSaveEntity('people', fd, modal.item?.id)} />}
-               {modal.type === 'guide_crud' && <GenericCRUDForm type="guide" item={modal.item} onSubmit={(fd:any) => handleSaveEntity('guides', fd, modal.item?.id)} />}
                {modal.type === 'person_history' && <PersonHistoryView person={modal.person} visits={data.visits} />}
+               {modal.type === 'guide_crud' && <GenericCRUDForm type="guide" item={modal.item} onSubmit={(fd:any) => handleSaveEntity('guides', fd, modal.item?.id)} />}
             </div>
           </div>
         </div>
       )}
-    </div>
-  );
-}
-
-// --- SOPORTE LOGIN ---
-
-function LoginView({ onLogin }: any) {
-  return (
-    <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4">
-      <div className="max-w-xs w-full card-base p-10 text-center bg-white/5 border-white/10 backdrop-blur-xl">
-        <div className="p-4 bg-white rounded-xl inline-flex text-slate-900 mb-6 shadow-2xl scale-125"><Headphones size={32}/></div>
-        <h1 className="text-white font-black uppercase tracking-tighter text-2xl mb-8 leading-none">AudioPro Admin</h1>
-        <div className="space-y-3">
-          <button onClick={() => onLogin('admin')} className="w-full p-3.5 border border-white/10 rounded hover:bg-white hover:text-slate-900 text-white font-black uppercase text-[10px] tracking-widest transition-all shadow-lg">Administrador</button>
-          <button onClick={() => onLogin('operator')} className="w-full p-3.5 border border-indigo-500/30 rounded bg-indigo-500/10 text-indigo-400 font-black uppercase text-[10px] tracking-widest transition-all hover:bg-indigo-500 hover:text-white shadow-lg">Operario</button>
-        </div>
-      </div>
     </div>
   );
 }
