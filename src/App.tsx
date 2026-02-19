@@ -4,10 +4,10 @@ import {
   LogOut, CheckCircle2, CloudOff, AlertCircle, Database, UserPlus, 
   History, Settings, BarChart3, Printer, X, Plus, Save, Briefcase, 
   Wrench, FileText, Camera, Edit2, Trash2, RefreshCw, Upload, Globe, 
-  ChevronLeft, ChevronRight, Menu
+  ChevronLeft, ChevronRight, Menu, Hammer, Settings2, ShieldCheck
 } from 'lucide-react';
 
-// --- INTERFACES ---
+// --- INTERFACES PARA TYPESCRIPT ---
 interface MaintLog { id: number; date: string; notes: string; statusAtTime: string; }
 interface Equipment { id: string; model: string; status: string; barcode: string; maintenanceLogs: MaintLog[]; visitorId?: string; }
 interface Visitor { id: string; name: string; document: string; country: string; age: number; email?: string; }
@@ -33,7 +33,7 @@ const StorageService = {
     const saved = localStorage.getItem(APP_STORAGE_KEY);
     return saved ? JSON.parse(saved) : INITIAL_DATA;
   },
-  async syncToCloud() { return new Promise((res) => setTimeout(() => res(new Date().toISOString()), 800)); }
+  async syncToCloud(data: any) { return new Promise((res) => setTimeout(() => res(new Date().toISOString()), 800)); }
 };
 
 export default function App() {
@@ -57,7 +57,7 @@ export default function App() {
   const handleSync = async (currentData = data) => {
     setIsSyncing(true);
     try {
-      const time: any = await StorageService.syncToCloud();
+      const time: any = await StorageService.syncToCloud(currentData);
       const updated = { ...currentData, syncMetadata: { lastSync: time, status: 'synced' } };
       setData(updated);
       StorageService.saveLocal(updated);
@@ -88,6 +88,39 @@ export default function App() {
     updateData({ ...data, [type]: newCollection });
     setModal(null);
     triggerNotif("Guardado con éxito");
+  };
+
+  const handleDelete = (type: string, id: string) => {
+    if (!window.confirm("¿Confirmas la eliminación definitiva?")) return;
+    updateData({ ...data, [type]: data[type].filter((item: any) => item.id !== id) });
+    triggerNotif("Eliminado correctamente");
+  };
+
+  const handleAssignLoan = (e: React.FormEvent, entity: any, entityType: string) => {
+    e.preventDefault();
+    const formData = new FormData(e.target as HTMLFormElement);
+    const barcode = formData.get('barcode');
+    const equipment = data.inventory.find((i: any) => i.barcode === barcode);
+
+    if (!equipment) return triggerNotif("Error: El código no existe");
+    if (equipment.status !== 'available') return triggerNotif("Equipo no disponible");
+
+    const newInventory = data.inventory.map((item: any) => 
+      item.id === equipment.id ? { ...item, status: 'in_use', visitorId: entity.id } : item
+    );
+    const newLoan = {
+      id: `L-${Date.now()}`,
+      entityId: entity.id,
+      entityType,
+      equipmentId: equipment.id,
+      barcodeUsed: barcode,
+      timestamp: new Date().toISOString(),
+      returned: false
+    };
+
+    updateData({ ...data, inventory: newInventory, loans: [...data.loans, newLoan] });
+    setModal(null);
+    setPrintData({ type: 'loan', entity, equipment, timestamp: newLoan.timestamp });
   };
 
   const handleReceive = (equipmentId: string) => {
@@ -250,10 +283,10 @@ export default function App() {
               <button onClick={() => setModal(null)} className="p-1 hover:bg-slate-200 rounded"><X size={14}/></button>
             </div>
             <div className="p-4 overflow-y-auto custom-scrollbar flex-1">
-              {modal.type === 'visitors_crud' && <VisitorForm item={modal.item} onSubmit={(e) => handleEntityCRUD(e, 'visitors', modal.item?.id)} />}
-              {modal.type === 'inventory_crud' && <InventoryForm item={modal.item} onSubmit={(e) => handleEntityCRUD(e, 'inventory', modal.item?.id)} />}
+              {modal.type === 'visitors_crud' && <VisitorForm item={modal.item} onSubmit={(e: React.FormEvent) => handleEntityCRUD(e, 'visitors', modal.item?.id)} />}
+              {modal.type === 'inventory_crud' && <InventoryForm item={modal.item} onSubmit={(e: React.FormEvent) => handleEntityCRUD(e, 'inventory', modal.item?.id)} />}
               {modal.type === 'equipment_details' && <EquipmentSheet item={modal.item} data={data} updateData={updateData} refreshModal={(i: any) => setModal({ ...modal, item: i })} />}
-              {modal.type === 'assign_flow' && <AssignFlow visitor={modal.visitor} onAssign={(e) => handleAssignLoan(e, modal.visitor, 'visitor')} />}
+              {modal.type === 'assign_flow' && <AssignFlow visitor={modal.visitor} onAssign={(e: React.FormEvent) => handleAssignLoan(e, modal.visitor, 'visitor')} />}
               {modal.type === 'assign_choice' && (
                 <div className="grid grid-cols-2 gap-3 p-4">
                   <button onClick={() => { setView('visitors'); setModal(null); }} className="p-8 border rounded hover:border-indigo-500 hover:bg-indigo-50 flex flex-col items-center gap-2"><Users/><span className="text-[10px] font-bold">VISITANTE</span></button>
@@ -316,7 +349,7 @@ const VisitorForm = ({ item, onSubmit }: any) => (
       <div><label className="text-[9px] font-black uppercase text-slate-400">País</label><input name="country" defaultValue={item?.country || 'España'} className="input-base" required /></div>
       <div><label className="text-[9px] font-black uppercase text-slate-400">Edad</label><input name="age" type="number" defaultValue={item?.age || 25} className="input-base" required /></div>
     </div>
-    <button className="w-full bg-slate-900 text-white py-2.5 rounded font-black text-[10px] uppercase tracking-widest mt-4">Guardar Registro</button>
+    <button type="submit" className="w-full bg-slate-900 text-white py-2.5 rounded font-black text-[10px] uppercase tracking-widest mt-4">Guardar Registro</button>
   </form>
 );
 
@@ -327,7 +360,7 @@ const InventoryForm = ({ item, onSubmit }: any) => (
       <div><label className="text-[9px] font-black uppercase text-slate-400">Código de Barras</label><input name="barcode" defaultValue={item?.barcode} className="input-base" required /></div>
       <div className="col-span-2"><label className="text-[9px] font-black uppercase text-slate-400">Modelo / Versión</label><input name="model" defaultValue={item?.model || 'Standard'} className="input-base" required /></div>
     </div>
-    <button className="w-full bg-slate-900 text-white py-2.5 rounded font-black text-[10px] uppercase tracking-widest mt-4">Actualizar Inventario</button>
+    <button type="submit" className="w-full bg-slate-900 text-white py-2.5 rounded font-black text-[10px] uppercase tracking-widest mt-4">Actualizar Inventario</button>
   </form>
 );
 
@@ -364,13 +397,13 @@ const EquipmentSheet = ({ item, data, updateData, refreshModal }: any) => {
        <div className="pt-2">
          <textarea id="maint-text" placeholder="Nueva anotación..." className="input-base h-16 mb-2"></textarea>
          <button onClick={() => {
-           const text = (document.getElementById('maint-text') as any).value;
-           if (!text) return;
-           const newLogs = [...item.maintenanceLogs, { id: Date.now(), date: new Date().toLocaleDateString(), notes: text, statusAtTime: item.status }];
+           const noteEl = document.getElementById('maint-text') as HTMLTextAreaElement;
+           if (!noteEl.value) return;
+           const newLogs = [...item.maintenanceLogs, { id: Date.now(), date: new Date().toLocaleDateString(), notes: noteEl.value, statusAtTime: item.status }];
            const newInv = data.inventory.map((i: any) => i.id === item.id ? { ...i, maintenanceLogs: newLogs } : i);
            updateData({ ...data, inventory: newInv });
            refreshModal(newInv.find((i: any) => i.id === item.id));
-           (document.getElementById('maint-text') as any).value = "";
+           noteEl.value = "";
          }} className="w-full btn-compact bg-slate-900 text-white justify-center uppercase tracking-widest text-[9px]">Añadir Registro Técnico</button>
        </div>
     </div>
@@ -386,7 +419,7 @@ const AssignFlow = ({ visitor, onAssign }: any) => (
           <input name="barcode" autoFocus className="w-full bg-transparent text-center font-mono text-2xl font-black outline-none placeholder:opacity-10" placeholder="00000" required />
         </div>
      </div>
-     <button className="w-full bg-indigo-600 text-white py-3 rounded font-black text-[10px] uppercase tracking-widest shadow-lg shadow-indigo-100">Confirmar Entrega a {visitor.name}</button>
+     <button type="submit" className="w-full bg-indigo-600 text-white py-3 rounded font-black text-[10px] uppercase tracking-widest shadow-lg shadow-indigo-100">Confirmar Entrega a {visitor.name}</button>
   </form>
 );
 
@@ -487,13 +520,6 @@ const LoginView = ({ onLogin }: any) => (
       </div>
     </div>
   </div>
-);
-
-const RoleButton = ({ onClick, icon, label, desc, color }: any) => (
-  <button onClick={onClick} className={`w-full p-4 border border-transparent rounded flex items-center gap-4 transition-all group ${color}`}>
-    <div className="p-2 bg-white/10 rounded">{icon}</div>
-    <div className="text-left leading-none"><p className="font-black text-xs uppercase mb-0.5">{label}</p><p className="text-[9px] opacity-40 italic">{desc}</p></div>
-  </button>
 );
 
 const InputField = ({ label, ...props }: any) => (
