@@ -7,7 +7,7 @@ import {
   ChevronLeft, ChevronRight, Menu, Hammer, Settings2, ShieldCheck,
   Timer, Scan, Phone, Mail, UserCheck, Calendar, Search, ListChecks,
   SortAsc, SortDesc, Filter, MoreHorizontal, QrCode, Map, Play, CheckSquare,
-  ClipboardList
+  ClipboardList, AlertTriangle
 } from 'lucide-react';
 
 // --- INTERFACES PARA TYPESCRIPT (VERCEL COMPATIBILITY) ---
@@ -35,9 +35,18 @@ interface Tour {
 }
 
 // --- CONSTANTES Y DATOS INICIALES ---
-const APP_STORAGE_KEY = "AUDIOGUIDE_PRO_V19_FINAL_STABLE";
+const APP_STORAGE_KEY = "AUDIOGUIDE_PRO_V20_TIMERS";
 const INITIAL_DATA = {
-  settings: { logo: "https://via.placeholder.com/100?text=LOGO", terms: "Contrato de responsabilidad por equipos...", appName: "AudioPro Admin" },
+  settings: { 
+    logo: "https://via.placeholder.com/100?text=LOGO", 
+    terms: "Contrato de responsabilidad por equipos...", 
+    appName: "AudioPro Admin",
+    timerThresholds: {
+      green: 5,    // Menos de 5 min
+      yellow: 10,  // Menos de 10 min
+      red: 11      // Más de 10 min
+    }
+  },
   syncMetadata: { lastSync: null, status: 'synced' },
   people: [{ id: "P-101", name: "Carlos Perez", document: "12345678", country: "España", age: 34, email: "carlos@mail.com", phone: "600000000", type: 'visitor' }],
   inventory: Array.from({ length: 35 }, (_, i) => ({
@@ -119,14 +128,37 @@ function StatCard({ label, val, color, icon }: any) {
   );
 }
 
-function MaintBar({ label, val, max, color }: any) {
-  const pct = max > 0 ? (val / max) * 100 : 0;
+// --- COMPONENTE DE SEMAFORIZACIÓN DE TIEMPO ---
+
+function VisitTimer({ startTime, thresholds, showLabel = true }: { startTime: string, thresholds: any, showLabel?: boolean }) {
+  const [elapsed, setElapsed] = useState(0);
+
+  useEffect(() => {
+    const calculate = () => {
+      const diff = Math.floor((new Date().getTime() - new Date(startTime).getTime()) / 60000);
+      setElapsed(diff);
+    };
+    calculate();
+    const interval = setInterval(calculate, 30000);
+    return () => clearInterval(interval);
+  }, [startTime]);
+
+  let colorClass = "text-emerald-600 bg-emerald-50 border-emerald-100";
+  let dotClass = "bg-emerald-500";
+
+  if (elapsed >= (thresholds.yellow || 10)) {
+    colorClass = "text-amber-600 bg-amber-50 border-amber-100";
+    dotClass = "bg-amber-500";
+  }
+  if (elapsed >= (thresholds.red || 15)) {
+    colorClass = "text-red-600 bg-red-50 border-red-100 animate-pulse";
+    dotClass = "bg-red-500";
+  }
+
   return (
-    <div className="flex-1 flex flex-col items-center gap-2 h-full justify-end">
-       <div className="w-full h-full max-h-[120px] bg-slate-50 rounded border relative flex items-end overflow-hidden">
-         <div className={`w-full transition-all duration-700 ${color}`} style={{ height: `${pct}%` }} />
-       </div>
-       <span className="text-[8px] font-bold text-slate-400 uppercase text-center leading-none">{label}<br/>({val})</span>
+    <div className={`flex items-center gap-1.5 px-2 py-0.5 rounded border font-black text-[9px] transition-colors ${colorClass}`}>
+      <div className={`w-1.5 h-1.5 rounded-full ${dotClass}`} />
+      {elapsed}m {showLabel && <span className="opacity-50 ml-0.5">TRANS.</span>}
     </div>
   );
 }
@@ -169,16 +201,12 @@ function UnifiedPersonForm({ item, onSubmit, peopleList, title }: any) {
       <form onSubmit={(e) => { e.preventDefault(); onSubmit(formData); }} className="space-y-3">
         <div className="grid grid-cols-2 gap-2">
           <InputField label="Cédula / Pasaporte" value={formData.document} onBlur={handleDocBlur} onChange={(e: any) => setFormData({...formData, document: e.target.value})} required />
-          <InputField label="Código Interno" value={formData.code} onChange={(e: any) => setFormData({...formData, code: e.target.value})} />
+          <InputField label="Código Referencia" value={formData.code} onChange={(e: any) => setFormData({...formData, code: e.target.value})} />
         </div>
         <InputField label="Nombre Completo" value={formData.name} onChange={(e: any) => setFormData({...formData, name: e.target.value})} required />
         <div className="grid grid-cols-2 gap-2">
           <InputField label="País" value={formData.country} onChange={(e: any) => setFormData({...formData, country: e.target.value})} />
           <InputField label="Edad" type="number" value={formData.age} onChange={(e: any) => setFormData({...formData, age: e.target.value})} />
-        </div>
-        <div className="grid grid-cols-2 gap-2">
-          <InputField label="Teléfono" value={formData.phone} onChange={(e: any) => setFormData({...formData, phone: e.target.value})} />
-          <InputField label="Email" type="email" value={formData.email} onChange={(e: any) => setFormData({...formData, email: e.target.value})} />
         </div>
         <button type="submit" className="w-full bg-slate-900 text-white py-3 rounded font-black text-[10px] uppercase mt-4 tracking-widest hover:bg-indigo-600 transition-colors shadow-lg">
           {title || "Registrar e Iniciar"}
@@ -249,7 +277,7 @@ function TourManager({ data, onComplete, triggerNotif }: any) {
   );
 }
 
-function TourDetailsView({ tour, data, onFinishTour, onFinishVisit }: any) {
+function TourDetailsView({ tour, data, onFinishTour, onFinishVisit, thresholds }: any) {
   const guide = data.guides.find((g: any) => g.id === tour.guideId);
   const tourVisits = data.visits.filter((v: any) => v.tourId === tour.id);
 
@@ -260,7 +288,10 @@ function TourDetailsView({ tour, data, onFinishTour, onFinishVisit }: any) {
           <h3 className="font-black text-sm uppercase text-indigo-600 leading-none mb-1">{tour.name || tour.id}</h3>
           <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-1"><Briefcase size={10}/> Guía: {guide?.name || 'N/A'}</p>
         </div>
-        <StatusBadge status={tour.status} />
+        <div className="flex flex-col items-end gap-1">
+          <StatusBadge status={tour.status} />
+          {tour.status === 'active' && <VisitTimer startTime={tour.startTime} thresholds={thresholds} />}
+        </div>
       </div>
 
       <div className="space-y-2">
@@ -270,7 +301,7 @@ function TourDetailsView({ tour, data, onFinishTour, onFinishVisit }: any) {
              <thead className="bg-slate-50/50 border-b">
                 <tr className="text-left opacity-40 uppercase font-black">
                   <th className="p-2">Persona</th>
-                  <th className="p-2">Equipos</th>
+                  <th className="p-2">Tiempo</th>
                   <th className="p-2 text-right">Acción</th>
                 </tr>
              </thead>
@@ -280,8 +311,13 @@ function TourDetailsView({ tour, data, onFinishTour, onFinishVisit }: any) {
                   const active = v.status === 'active';
                   return (
                     <tr key={v.id} className={!active ? 'opacity-40 grayscale bg-slate-50/50' : 'hover:bg-slate-50/20'}>
-                       <td className="p-2 font-bold uppercase">{p?.name || 'Cargando...'}</td>
-                       <td className="p-2 font-mono text-[9px]">{v.equipmentIds.join(', ')}</td>
+                       <td className="p-2 font-bold uppercase">
+                          {p?.name || 'Cargando...'}
+                          <p className="text-[7px] font-mono opacity-50">EQ: {v.equipmentIds.join(', ')}</p>
+                       </td>
+                       <td className="p-2">
+                          {active ? <VisitTimer startTime={v.startTime} thresholds={thresholds} showLabel={false} /> : <span className="opacity-30">Fin</span>}
+                       </td>
                        <td className="p-2 text-right">
                           {active ? (
                             <button onClick={() => onFinishVisit(v.id)} className="text-indigo-600 font-black text-[8px] uppercase border border-indigo-100 px-2 py-0.5 rounded hover:bg-indigo-50 transition-colors">Recibir</button>
@@ -307,7 +343,7 @@ function TourDetailsView({ tour, data, onFinishTour, onFinishVisit }: any) {
   );
 }
 
-function VisitDetailsView({ visit, data, updateData, triggerNotif, guides }: any) {
+function VisitDetailsView({ visit, data, updateData, triggerNotif, guides, thresholds }: any) {
   const person = data.people.find((p: any) => p.id === visit.personId);
   const [bc, setBc] = useState('');
 
@@ -332,9 +368,12 @@ function VisitDetailsView({ visit, data, updateData, triggerNotif, guides }: any
 
   return (
     <div className="space-y-6 text-left animate-in fade-in duration-300">
-      <div className="border-b pb-4">
-        <h3 className="font-black text-sm uppercase text-indigo-600 leading-none mb-1">{person?.name}</h3>
-        <p className="text-[9px] opacity-40 font-bold uppercase tracking-widest">{person?.document} • {person?.country}</p>
+      <div className="border-b pb-4 flex justify-between items-start">
+        <div>
+           <h3 className="font-black text-sm uppercase text-indigo-600 leading-none mb-1">{person?.name}</h3>
+           <p className="text-[9px] opacity-40 font-bold uppercase tracking-widest">{person?.document} • {person?.country}</p>
+        </div>
+        {visit.status === 'active' && <VisitTimer startTime={visit.startTime} thresholds={thresholds} />}
       </div>
       <div className="space-y-4">
         <InputField label="Guía Asignado" type="select" value={visit.guideId || ''} onChange={(e: any) => {
@@ -382,7 +421,7 @@ function EquipmentSheet({ item, data, updateData, refreshModal }: any) {
           </div>
        </div>
        <div className="max-h-32 overflow-y-auto custom-scrollbar border p-2 rounded text-[9px] bg-slate-50/50">
-          <p className="font-black uppercase opacity-30 text-[7px] mb-2 tracking-widest">Logs de Hoja de Vida</p>
+          <p className="font-black uppercase opacity-30 text-[7px] mb-2 tracking-widest">Logs de Taller</p>
           {item.maintenanceLogs.map((l:any) => <div key={l.id} className="mb-2 border-l-2 border-indigo-400 pl-2"><strong>{l.date}</strong>: {l.notes}</div>)}
        </div>
        <div className="flex gap-1 pt-2 border-t mt-2">
@@ -414,13 +453,13 @@ function GenericCRUDForm({ type, item, onSubmit }: any) {
         )}
         {type === 'guide' && (
           <>
-            <div className="col-span-2"><label className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Nombre del Guía</label><input name="name" defaultValue={item?.name} className="input-base" required /></div>
+            <div className="col-span-2"><label className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Nombre</label><input name="name" defaultValue={item?.name} className="input-base" required /></div>
             <div><label className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Licencia</label><input name="license" defaultValue={item?.license} className="input-base" required /></div>
             <div><label className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Teléfono</label><input name="phone" defaultValue={item?.phone} className="input-base" /></div>
           </>
         )}
       </div>
-      <button type="submit" className="w-full bg-slate-900 text-white py-3 rounded font-black text-[10px] uppercase mt-4 shadow-lg">Guardar Datos</button>
+      <button type="submit" className="w-full bg-slate-900 text-white py-3 rounded font-black text-[10px] uppercase mt-4 shadow-lg">Guardar Registro</button>
     </form>
   );
 }
@@ -445,6 +484,7 @@ function PersonHistoryView({ person, visits }: any) {
   );
 }
 
+// --- LOGIN ---
 function LoginView({ onLogin }: any) {
   return (
     <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4">
@@ -465,7 +505,7 @@ function LoginView({ onLogin }: any) {
 export default function App() {
   const [userRole, setUserRole] = useState<string | null>(null);
   const [data, setData] = useState<any>(INITIAL_DATA);
-  const [view, setView] = useState('tours');
+  const [view, setView] = useState('visits');
   const [isSyncing, setIsSyncing] = useState(false);
   const [isMenuCollapsed, setIsMenuCollapsed] = useState(false);
   const [notif, setNotif] = useState<string | null>(null);
@@ -473,7 +513,7 @@ export default function App() {
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
   const [searchQuery, setSearchQuery] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 20;
+  const itemsPerPage = 15;
 
   useEffect(() => { setData(StorageService.loadLocal()); }, []);
 
@@ -606,11 +646,17 @@ export default function App() {
           <button onClick={() => setIsMenuCollapsed(!isMenuCollapsed)} className="p-1 hover:bg-white/10 rounded mx-auto transition-transform"><Menu size={14}/></button>
         </div>
         <div className="flex-1 overflow-y-auto custom-scrollbar p-1.5 space-y-0.5">
-          <NavItem icon={<Map size={16}/>} label="Tours" active={view==='tours'} collapsed={isMenuCollapsed} onClick={() => setView('tours')} />
           <NavItem icon={<UserCheck size={16}/>} label="Visitas" active={view==='visits'} collapsed={isMenuCollapsed} onClick={() => setView('visits')} />
+          <NavItem icon={<Map size={16}/>} label="Tours" active={view==='tours'} collapsed={isMenuCollapsed} onClick={() => setView('tours')} />
           <NavItem icon={<Headphones size={16}/>} label="Inventario" active={view==='inventory'} collapsed={isMenuCollapsed} onClick={() => setView('inventory')} />
           <NavItem icon={<Users size={16}/>} label="Personas" active={view==='people'} collapsed={isMenuCollapsed} onClick={() => setView('people')} />
           <NavItem icon={<Briefcase size={16}/>} label="Guías" active={view==='guides'} collapsed={isMenuCollapsed} onClick={() => setView('guides')} />
+          {userRole === 'admin' && (
+            <div className="pt-3 border-t border-white/5 mt-2 space-y-1">
+              <NavItem icon={<BarChart3 size={16}/>} label="Métricas" active={view==='stats'} collapsed={isMenuCollapsed} onClick={() => setView('stats')} />
+              <NavItem icon={<Settings size={16}/>} label="Ajustes" active={view==='settings'} collapsed={isMenuCollapsed} onClick={() => setView('settings')} />
+            </div>
+          )}
         </div>
         <div className="p-1.5 border-t border-white/5 bg-black/20">
            <NavItem icon={<LogOut size={16}/>} label="Salir" collapsed={isMenuCollapsed} onClick={() => setUserRole(null)} color="text-red-400 hover:bg-red-500/10" />
@@ -635,7 +681,7 @@ export default function App() {
           </div>
         </header>
 
-        <div className="p-3 w-full max-w-[1600px] mx-auto">
+        <div className="p-3 w-full">
           {notif && (
             <div className="fixed bottom-6 right-6 bg-slate-900 text-white px-4 py-2 rounded-lg shadow-2xl flex items-center gap-2 z-[100] text-[10px] font-black animate-in fade-in border border-white/10">
               <CheckCircle2 size={14} className="text-emerald-400" /> {notif}
@@ -680,7 +726,9 @@ export default function App() {
                       <div key={visit.id} onClick={() => setModal({ type: 'visit_details', visit })} className={`card-base p-3 flex flex-col gap-3 cursor-pointer transition-all hover:border-indigo-400 ${visit.status === 'finished' ? 'opacity-40 grayscale bg-slate-50' : 'bg-white shadow-sm'}`}>
                         <div className="flex justify-between items-start">
                           <div className="w-8 h-8 bg-slate-100 text-slate-500 rounded flex items-center justify-center font-bold border text-[10px] uppercase">{person?.name?.charAt(0) || '?'}</div>
-                          {visit.status === 'active' && <div className="text-indigo-600 font-black text-[8px] uppercase tracking-tighter">Activa</div>}
+                          <div className="flex flex-col items-end gap-1">
+                             {visit.status === 'active' ? <VisitTimer startTime={visit.startTime} thresholds={data.settings.timerThresholds} /> : <StatusBadge status="finished" />}
+                          </div>
                         </div>
                         <div className="flex-1 min-h-[40px]">
                           <p className="font-black text-[10px] truncate leading-tight uppercase text-slate-800">{person?.name || 'Cargando...'}</p>
@@ -716,44 +764,34 @@ export default function App() {
             </div>
           )}
 
-          {view === 'people' && (
-            <div className="card-base animate-in fade-in">
-              <table className="w-full text-left text-[10px]">
-                <thead className="bg-slate-50/50 border-b text-slate-400 uppercase">
-                   <tr><th className="table-header w-1/3">Nombre</th><th className="table-header">Documento</th><th className="table-header">Historial</th><th className="table-header text-right">Acción</th></tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                   {paginatedData.map((p: any) => (
-                      <tr key={p.id}>
-                         <td className="table-cell font-black uppercase">{p.name}</td>
-                         <td className="table-cell text-slate-400 font-bold">{p.document}</td>
-                         <td className="table-cell"><button onClick={() => setModal({ type: 'person_history', person: p })} className="btn-compact bg-slate-100">Ver Visitas</button></td>
-                         <td className="table-cell text-right space-x-1">
-                            <button onClick={() => setModal({ type: 'person_crud', item: p })} className="p-1 border rounded hover:bg-slate-50"><Edit2 size={12}/></button>
-                            <button onClick={() => handleDelete('people', p.id)} className="p-1 border rounded hover:bg-red-50 text-red-400 transition-colors"><Trash2 size={12}/></button>
-                         </td>
-                      </tr>
-                   ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-
-          {view === 'guides' && (
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-               {data.guides.map((g: any) => (
-                  <div key={g.id} className="card-base p-4 border-l-4 border-l-amber-500 flex flex-col gap-3 shadow-md">
-                     <div className="flex justify-between items-start">
-                        <div className="p-2.5 bg-amber-50 text-amber-600 rounded-lg shadow-inner"><Briefcase size={22}/></div>
-                        <p className="text-[10px] font-black uppercase text-amber-600 tracking-tighter">{g.license}</p>
-                     </div>
-                     <div><h3 className="font-black text-xs uppercase mb-0.5 leading-none">{g.name}</h3><p className="text-[9px] opacity-40 font-bold uppercase">{g.id}</p></div>
-                     <div className="flex gap-2 border-t pt-3 mt-1">
-                        <button onClick={() => setModal({ type: 'guide_crud', item: g })} className="flex-1 btn-compact bg-slate-100 border hover:bg-white transition-all shadow-sm">Editar Perfil</button>
-                        <button onClick={() => handleDelete('guides', g.id)} className="px-3 border border-red-100 text-red-300 hover:text-red-500 transition-all rounded"><Trash2 size={12}/></button>
+          {view === 'settings' && (
+            <div className="max-w-md mx-auto card-base p-6 animate-in zoom-in">
+               <h3 className="font-black text-xs uppercase mb-6 border-b pb-2 flex items-center gap-2 text-indigo-600"><Settings2 size={14}/> Configuración de Tiempos</h3>
+               <div className="space-y-6">
+                  <div className="grid grid-cols-2 gap-4">
+                     <InputField 
+                        label="Umbral Amarillo (Minutos)" 
+                        type="number" 
+                        value={data.settings.timerThresholds.yellow} 
+                        onChange={(e:any) => updateData({...data, settings: {...data.settings, timerThresholds: {...data.settings.timerThresholds, yellow: parseInt(e.target.value)}}})}
+                     />
+                     <InputField 
+                        label="Umbral Rojo (Minutos)" 
+                        type="number" 
+                        value={data.settings.timerThresholds.red} 
+                        onChange={(e:any) => updateData({...data, settings: {...data.settings, timerThresholds: {...data.settings.timerThresholds, red: parseInt(e.target.value)}}})}
+                     />
+                  </div>
+                  <div className="bg-slate-50 p-4 rounded border flex flex-col gap-2">
+                     <p className="text-[9px] font-black text-slate-400 uppercase">Vista previa de semáforo:</p>
+                     <div className="flex gap-2">
+                        <div className="px-2 py-1 rounded bg-emerald-50 text-emerald-600 border border-emerald-100 text-[8px] font-black uppercase">Verde (&lt; {data.settings.timerThresholds.yellow}m)</div>
+                        <div className="px-2 py-1 rounded bg-amber-50 text-amber-600 border border-amber-100 text-[8px] font-black uppercase">Amarillo (&ge; {data.settings.timerThresholds.yellow}m)</div>
+                        <div className="px-2 py-1 rounded bg-red-50 text-red-600 border border-red-100 text-[8px] font-black uppercase">Rojo (&ge; {data.settings.timerThresholds.red}m)</div>
                      </div>
                   </div>
-               ))}
+                  <button onClick={()=>triggerNotif("Ajustes Guardados")} className="w-full bg-slate-900 text-white py-3 rounded font-black text-[10px] uppercase shadow-lg">Guardar Configuración</button>
+               </div>
             </div>
           )}
         </div>
@@ -769,12 +807,12 @@ export default function App() {
             </div>
             <div className="p-4 overflow-y-auto custom-scrollbar flex-1 bg-white">
                {modal.type === 'create_tour' && <TourManager data={data} onComplete={handleCreateTour} triggerNotif={triggerNotif} />}
-               {modal.type === 'tour_details' && <TourDetailsView tour={modal.tour} data={data} onFinishTour={handleFinishTour} onFinishVisit={handleFinishVisit} triggerNotif={triggerNotif} />}
+               {modal.type === 'tour_details' && <TourDetailsView tour={modal.tour} data={data} onFinishTour={handleFinishTour} onFinishVisit={handleFinishVisit} thresholds={data.settings.timerThresholds} triggerNotif={triggerNotif} />}
                {modal.type === 'register_flow' && <UnifiedPersonForm peopleList={data.people} onSubmit={handleSaveVisitFlow} />}
                {modal.type === 'person_crud' && <UnifiedPersonForm item={modal.item} peopleList={data.people} title="Actualizar Persona" onSubmit={(fd:any) => handleSaveEntity('people', fd, modal.item?.id)} />}
                {modal.type === 'visit_details' && (
                  <div className="space-y-6 text-left">
-                    <VisitDetailsView visit={modal.visit} data={data} updateData={updateData} triggerNotif={triggerNotif} guides={data.guides} />
+                    <VisitDetailsView visit={modal.visit} data={data} updateData={updateData} triggerNotif={triggerNotif} guides={data.guides} thresholds={data.settings.timerThresholds} />
                     <div className="pt-4 border-t">
                        <button onClick={() => handleFinishVisit(modal.visit.id)} className="w-full bg-slate-900 text-white py-3 rounded font-black text-[10px] uppercase shadow-lg hover:bg-red-600 transition-colors">Finalizar y Liberar</button>
                     </div>
