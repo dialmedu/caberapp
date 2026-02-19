@@ -43,14 +43,18 @@ function StatusBadge({ status }: { status: string }) {
     maint_pending: { label: 'Cola', class: 'text-slate-500 bg-slate-50 border-slate-200' }
   };
   const c = cfg[status] || cfg.available;
-  return <span className={`px-1.5 py-0.5 rounded-[3px] text-[7px] font-black border uppercase tracking-tighter ${c.class}`}>{c.label}</span>;
+  return <span className={`px-1.5 py-0.5 rounded text-[7px] font-black border uppercase tracking-tighter ${c.class}`}>{c.label}</span>;
 }
 
 function InputField({ label, ...props }: any) {
   return (
     <div className="w-full text-left">
       <label className="block text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1 ml-1">{label}</label>
-      <input className="input-base" {...props} />
+      {props.type === 'select' ? (
+        <select className="input-base" {...props}>{props.children}</select>
+      ) : (
+        <input className="input-base" {...props} />
+      )}
     </div>
   );
 }
@@ -111,7 +115,8 @@ function UnifiedPersonForm({ item, onSubmit, peopleList, title }: any) {
   const handleQrInput = (e: React.FormEvent) => {
     e.preventDefault();
     if (!qrValue) return;
-    const doc = qrValue.split('|')[0] || qrValue; // Simulación parseo QR
+    // Simulación: primer segmento es doc, el resto opcional
+    const doc = qrValue.split('|')[0].replace(/\D/g, '') || qrValue;
     const existing = peopleList.find((p: any) => p.document === doc);
     if (existing) setFormData({ ...formData, ...existing });
     else setFormData({ ...formData, document: doc });
@@ -123,13 +128,13 @@ function UnifiedPersonForm({ item, onSubmit, peopleList, title }: any) {
       <div className="p-3 bg-indigo-50 rounded border border-indigo-100 flex items-center gap-2">
         <QrCode size={18} className="text-indigo-600" />
         <form onSubmit={handleQrInput} className="flex-1">
-          <input placeholder="QR Cédula..." value={qrValue} onChange={(e) => setQrValue(e.target.value)} className="w-full bg-transparent border-none text-[10px] font-bold outline-none uppercase" />
+          <input placeholder="QR Cédula / Scan..." value={qrValue} onChange={(e) => setQrValue(e.target.value)} className="w-full bg-transparent border-none text-[10px] font-bold outline-none uppercase" />
         </form>
       </div>
       <form onSubmit={(e) => { e.preventDefault(); onSubmit(formData); }} className="space-y-3">
         <div className="grid grid-cols-2 gap-2">
-          <InputField label="Cédula / Documento" value={formData.document} onBlur={handleDocBlur} onChange={(e: any) => setFormData({...formData, document: e.target.value})} required />
-          <InputField label="Código Interno" value={formData.code} onChange={(e: any) => setFormData({...formData, code: e.target.value})} />
+          <InputField label="Cédula / Pasaporte" value={formData.document} onBlur={handleDocBlur} onChange={(e: any) => setFormData({...formData, document: e.target.value})} required />
+          <InputField label="Código Referencia" value={formData.code} onChange={(e: any) => setFormData({...formData, code: e.target.value})} />
         </div>
         <InputField label="Nombre Completo" value={formData.name} onChange={(e: any) => setFormData({...formData, name: e.target.value})} required />
         <div className="grid grid-cols-2 gap-2">
@@ -140,7 +145,9 @@ function UnifiedPersonForm({ item, onSubmit, peopleList, title }: any) {
           <InputField label="Teléfono" value={formData.phone} onChange={(e: any) => setFormData({...formData, phone: e.target.value})} />
           <InputField label="Email" type="email" value={formData.email} onChange={(e: any) => setFormData({...formData, email: e.target.value})} />
         </div>
-        <button type="submit" className="w-full bg-slate-900 text-white py-3 rounded font-black text-[10px] uppercase mt-4 tracking-widest hover:bg-indigo-600 shadow-lg">{title || "Registrar Ingreso"}</button>
+        <button type="submit" className="w-full bg-slate-900 text-white py-3 rounded font-black text-[10px] uppercase mt-4 tracking-widest hover:bg-indigo-600 transition-colors shadow-lg">
+          {title || "Registrar y Continuar"}
+        </button>
       </form>
     </div>
   );
@@ -152,47 +159,54 @@ function VisitDetailsView({ visit, data, updateData, triggerNotif, guides }: any
 
   const addEquipment = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!bc) return;
     const eq = data.inventory.find((i: any) => i.barcode === bc && i.status === 'available');
-    if (!eq) return triggerNotif("No disponible");
+    if (!eq) return triggerNotif("No disponible o inexistente");
     const newInv = data.inventory.map((i: any) => i.id === eq.id ? { ...i, status: 'in_use', currentVisitId: visit.id } : i);
     const newVisits = data.visits.map((v: any) => v.id === visit.id ? { ...v, equipmentIds: [...v.equipmentIds, eq.id] } : v);
     updateData({ ...data, inventory: newInv, visits: newVisits });
     setBc('');
-    triggerNotif("Audioguía vinculada");
+    triggerNotif("Equipo vinculado");
+  };
+
+  const removeEquipment = (eqId: string) => {
+    const newInv = data.inventory.map((i: any) => i.id === eqId ? { ...i, status: 'available', currentVisitId: null } : i);
+    const newVisits = data.visits.map((v: any) => v.id === visit.id ? { ...v, equipmentIds: v.equipmentIds.filter((id: string) => id !== eqId) } : v);
+    updateData({ ...data, inventory: newInv, visits: newVisits });
+    triggerNotif("Equipo desvinculado");
   };
 
   return (
     <div className="space-y-6">
       <div className="border-b pb-4">
-        <h3 className="font-black text-sm uppercase leading-none mb-1">{person?.name}</h3>
-        <p className="text-[9px] opacity-40 uppercase font-bold tracking-widest">{person?.document} • {person?.country}</p>
+        <h3 className="font-black text-sm uppercase leading-none mb-1 text-indigo-600">{person?.name || 'Visitante'}</h3>
+        <p className="text-[9px] opacity-40 font-bold uppercase tracking-widest">{person?.document} • {person?.country}</p>
       </div>
       <div className="space-y-4">
         <InputField label="Guía Responsable" type="select" value={visit.guideId || ''} onChange={(e: any) => {
             const newVisits = data.visits.map((v: any) => v.id === visit.id ? { ...v, guideId: e.target.value } : v);
             updateData({ ...data, visits: newVisits });
         }}>
-          <option value="">Individual</option>
+          <option value="">Individual (Sin Guía)</option>
           {guides.map((g: any) => <option key={g.id} value={g.id}>{g.name}</option>)}
         </InputField>
         <div className="space-y-2">
-          <p className="text-[9px] font-black uppercase text-slate-400">Equipos Asignados</p>
-          {visit.equipmentIds.map((id: string) => (
-            <div key={id} className="p-2 bg-slate-50 border rounded flex justify-between items-center text-[10px] font-black uppercase">
-               <span className="flex items-center gap-2"><Headphones size={12}/> {id}</span>
-               <button onClick={() => {
-                 const newInv = data.inventory.map((i: any) => i.id === id ? { ...i, status: 'available', currentVisitId: null } : i);
-                 const newVisits = data.visits.map((v: any) => v.id === visit.id ? { ...v, equipmentIds: v.equipmentIds.filter((eid: string) => eid !== id) } : v);
-                 updateData({ ...data, inventory: newInv, visits: newVisits });
-               }} className="text-red-400 p-1"><X size={12}/></button>
-            </div>
-          ))}
-          <form onSubmit={addEquipment} className="flex gap-2">
+          <p className="text-[9px] font-black uppercase text-slate-400">Audioguías Vinculadas ({visit.equipmentIds.length})</p>
+          <div className="space-y-1.5 mb-3 max-h-32 overflow-y-auto custom-scrollbar pr-1">
+            {visit.equipmentIds.map((id: string) => (
+              <div key={id} className="p-2 bg-slate-50 border rounded flex justify-between items-center text-[10px] font-black uppercase">
+                 <span className="flex items-center gap-2"><Headphones size={12}/> {id}</span>
+                 <button onClick={() => removeEquipment(id)} className="text-red-400 p-1 hover:text-red-600"><Trash2 size={12}/></button>
+              </div>
+            ))}
+            {visit.equipmentIds.length === 0 && <p className="text-[10px] opacity-30 italic text-center py-2">Escanee equipos para esta visita</p>}
+          </div>
+          <form onSubmit={addEquipment} className="flex gap-1 pt-2 border-t">
              <div className="relative flex-1">
                <Camera size={14} className="absolute left-2 top-2 text-indigo-400" />
-               <input value={bc} onChange={(e) => setBc(e.target.value)} autoFocus placeholder="Scan Audioguía..." className="w-full pl-8 pr-2 py-2 border rounded text-[10px] font-bold outline-none focus:border-indigo-600 bg-indigo-50/20" />
+               <input value={bc} onChange={(e) => setBc(e.target.value)} autoFocus placeholder="Barcode Audioguía..." className="w-full pl-8 pr-2 py-2 border rounded text-[10px] font-bold outline-none focus:border-indigo-600 bg-indigo-50/10" />
              </div>
-             <button type="submit" className="px-4 bg-indigo-600 text-white rounded"><Plus size={16}/></button>
+             <button type="submit" className="px-4 bg-indigo-600 text-white rounded hover:bg-indigo-700 shadow-md"><Plus size={16}/></button>
           </form>
         </div>
       </div>
@@ -209,20 +223,20 @@ function EquipmentSheet({ item, data, updateData, refreshModal }: any) {
   return (
     <div className="space-y-4 text-left">
        <div className="bg-slate-50 p-3 rounded border shadow-inner">
-          <p className="text-[8px] font-black text-slate-400 uppercase mb-2">Cambiar Estado Técnico</p>
+          <p className="text-[8px] font-black text-slate-400 uppercase mb-2 tracking-widest">Estado Operativo</p>
           <div className="grid grid-cols-2 gap-2">
             {['available', 'maint_repair', 'maint_qc', 'maint_pending'].map(s => (
-              <button key={s} onClick={() => changeStatus(s)} className={`px-2 py-1.5 rounded border text-[8px] font-black uppercase ${item.status === s ? 'bg-indigo-600 text-white border-indigo-700 shadow-sm' : 'bg-white text-slate-400'}`}>{s.replace('maint_', '')}</button>
+              <button key={s} onClick={() => changeStatus(s)} className={`px-2 py-1.5 rounded border text-[8px] font-black uppercase transition-all ${item.status === s ? 'bg-indigo-600 text-white border-indigo-700 shadow-sm' : 'bg-white text-slate-400 hover:border-slate-300'}`}>{s.replace('maint_', '')}</button>
             ))}
           </div>
        </div>
        <div className="max-h-32 overflow-y-auto custom-scrollbar border p-2 rounded text-[9px] bg-slate-50/50">
-          <p className="font-black uppercase opacity-30 text-[7px] mb-2">Historial de Taller</p>
+          <p className="font-black uppercase opacity-30 text-[7px] mb-2 tracking-widest">Logs de Taller</p>
           {item.maintenanceLogs.map((l:any) => <div key={l.id} className="mb-2 border-l-2 border-indigo-400 pl-2"><strong>{l.date}</strong>: {l.notes}</div>)}
-          {item.maintenanceLogs.length === 0 && <p className="text-center opacity-30 py-2 italic">Sin registros técnicos</p>}
+          {item.maintenanceLogs.length === 0 && <p className="text-center opacity-30 py-2 italic text-[10px]">Sin reportes técnicos</p>}
        </div>
        <div className="flex gap-1 pt-2 border-t mt-2">
-          <textarea id="m-note" className="input-base h-12" placeholder="Nueva anotación..." />
+          <textarea id="m-note" className="input-base h-12" placeholder="Nota técnica..." />
           <button onClick={()=>{
              const noteEl = document.getElementById('m-note') as HTMLTextAreaElement;
              if(!noteEl.value) return;
@@ -237,23 +251,23 @@ function EquipmentSheet({ item, data, updateData, refreshModal }: any) {
   );
 }
 
-function GenericForm({ type, item, onSubmit }: any) {
+function GenericCRUDForm({ type, item, onSubmit }: any) {
   return (
-    <form onSubmit={(e) => { e.preventDefault(); const fd = new FormData(e.target as any); const d:any={}; fd.forEach((v,k)=>d[k]=v); onSubmit(d); }} className="space-y-3">
-      <div className="grid grid-cols-2 gap-2">
+    <form onSubmit={(e) => { e.preventDefault(); const fd = new FormData(e.target as any); const d:any={}; fd.forEach((v,k)=>d[k]=v); onSubmit(d); }} className="space-y-4">
+      <div className="grid grid-cols-2 gap-3">
         {type === 'inventory' && (
           <>
-            <div><label className="text-[8px] font-black text-slate-400 uppercase">ID Equipo</label><input name="id" defaultValue={item?.id} disabled={!!item} className="input-base" required /></div>
-            <div><label className="text-[8px] font-black text-slate-400 uppercase">Barcode</label><input name="barcode" defaultValue={item?.barcode} className="input-base" required /></div>
-            <div className="col-span-2"><label className="text-[8px] font-black text-slate-400 uppercase">Modelo</label><input name="model" defaultValue={item?.model || 'Standard'} className="input-base" /></div>
+            <div><label className="text-[8px] font-black text-slate-400 uppercase tracking-widest">ID Equipo</label><input name="id" defaultValue={item?.id} disabled={!!item} className="input-base" required /></div>
+            <div><label className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Barcode</label><input name="barcode" defaultValue={item?.barcode} className="input-base" required /></div>
+            <div className="col-span-2"><label className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Modelo / Versión</label><input name="model" defaultValue={item?.model || 'Standard'} className="input-base" /></div>
           </>
         )}
         {type === 'guide' && (
           <>
-            <div className="col-span-2"><label className="text-[8px] font-black text-slate-400 uppercase">Nombre</label><input name="name" defaultValue={item?.name} className="input-base" required /></div>
-            <div><label className="text-[8px] font-black text-slate-400 uppercase">LIC</label><input name="license" defaultValue={item?.license} className="input-base" required /></div>
-            <div><label className="text-[8px] font-black text-slate-400 uppercase">TEL</label><input name="phone" defaultValue={item?.phone} className="input-base" /></div>
-            <div className="col-span-2"><label className="text-[8px] font-black text-slate-400 uppercase">Días Laborados</label><input name="daysWorked" type="number" defaultValue={item?.daysWorked || 0} className="input-base" /></div>
+            <div className="col-span-2"><label className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Nombre del Guía</label><input name="name" defaultValue={item?.name} className="input-base" required /></div>
+            <div><label className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Licencia</label><input name="license" defaultValue={item?.license} className="input-base" required /></div>
+            <div><label className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Teléfono</label><input name="phone" defaultValue={item?.phone} className="input-base" /></div>
+            <div className="col-span-2"><label className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Días Laborados</label><input name="daysWorked" type="number" defaultValue={item?.daysWorked || 0} className="input-base" /></div>
           </>
         )}
       </div>
@@ -262,19 +276,42 @@ function GenericForm({ type, item, onSubmit }: any) {
   );
 }
 
+function StatusDashboard({ data }: any) {
+  return (
+    <div className="space-y-4 animate-in fade-in duration-500">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <StatCard label="En Uso" val={data.inventory.filter((i:any)=>i.status==='in_use').length} color="bg-amber-500" icon={<History size={16}/>} />
+        <StatCard label="Disponibles" val={data.inventory.filter((i:any)=>i.status==='available').length} color="bg-emerald-500" icon={<CheckCircle2 size={16}/>} />
+        <StatCard label="Mantenimiento" val={data.inventory.filter((i:any)=>i.status.includes('maint')).length} color="bg-slate-400" icon={<Wrench size={16}/>} />
+        <StatCard label="Visitas Hoy" val={data.loans.length} color="bg-indigo-600" icon={<Database size={16}/>} />
+      </div>
+    </div>
+  );
+}
+
 // --- DATOS INICIALES ---
 const INITIAL_DATA = {
-  settings: { logo: "https://via.placeholder.com/100?text=LOGO", terms: "Responsabilidad por equipos...", appName: "AudioPro Admin" },
+  settings: { logo: "https://via.placeholder.com/100?text=LOGO", terms: "Contrato de equipos...", appName: "AudioPro Admin" },
   syncMetadata: { lastSync: null, status: 'synced' },
   people: [{ id: "P-101", name: "Carlos Perez", document: "12345678", country: "España", age: 34, email: "carlos@mail.com", phone: "600000000", type: 'visitor' }],
   inventory: Array.from({ length: 30 }, (_, i) => ({
-    id: `AG-${100 + i}`, model: i % 4 === 0 ? "Premium" : "Standard", status: "available", barcode: `${20000 + i}`, maintenanceLogs: [] 
+    id: `AG-${100 + i}`, model: i % 5 === 0 ? "Premium" : "Standard", status: "available", barcode: `${20000 + i}`, maintenanceLogs: [] 
   })),
   visits: [],
   guides: [{ id: "G-101", name: "Elena Guía", license: "LIC-9988", phone: "555-0102", daysWorked: 12, type: 'guide' }],
+  loans: [] // Histórico plano para métricas
 };
 
-const APP_STORAGE_KEY = "AUDIOGUIDE_PRO_V12";
+const APP_STORAGE_KEY = "AUDIOGUIDE_PRO_V13_UXFIX";
+
+const StorageService = {
+  saveLocal(data: any) { localStorage.setItem(APP_STORAGE_KEY, JSON.stringify(data)); },
+  loadLocal() {
+    const saved = localStorage.getItem(APP_STORAGE_KEY);
+    try { return saved ? JSON.parse(saved) : INITIAL_DATA; } catch { return INITIAL_DATA; }
+  },
+  async syncToCloud(data: any) { return new Promise((res) => setTimeout(() => res(new Date().toISOString()), 600)); }
+};
 
 // --- COMPONENTE PRINCIPAL ---
 
@@ -288,9 +325,8 @@ export default function App() {
   const [modal, setModal] = useState<any>(null);
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
   const [searchQuery, setSearchQuery] = useState('');
-  const [sortConfig, setSortConfig] = useState({ key: 'startTime', direction: 'desc' });
   const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 20;
+  const itemsPerPage = 15;
 
   useEffect(() => { setData(StorageService.loadLocal()); }, []);
 
@@ -307,7 +343,7 @@ export default function App() {
     } finally { setIsSyncing(false); }
   };
 
-  // --- HANDLERS ---
+  // --- HANDLERS LÓGICA DE NEGOCIO ---
 
   const handleSaveVisitFlow = (personData: any) => {
     let updatedPeople = [...data.people];
@@ -322,7 +358,7 @@ export default function App() {
     };
     updateData({ ...data, people: updatedPeople, visits: [...data.visits, newVisit] });
     setModal({ type: 'visit_details', visit: newVisit });
-    triggerNotif("Visita abierta. Asigne equipos.");
+    triggerNotif("Visita abierta. Proceda a asignar equipos.");
   };
 
   const handleFinishVisit = (visitId: string) => {
@@ -330,8 +366,8 @@ export default function App() {
     if (!visit) return;
     const newInventory = data.inventory.map((i: any) => visit.equipmentIds.includes(i.id) ? { ...i, status: 'available', currentVisitId: null } : i);
     const newVisits = data.visits.map((v: any) => v.id === visitId ? { ...v, status: 'finished', endTime: new Date().toISOString() } : v);
-    updateData({ ...data, inventory: newInventory, visits: newVisits });
-    triggerNotif("Equipos recibidos");
+    updateData({ ...data, inventory: newInventory, visits: newVisits, loans: [...data.loans, { visitId, timestamp: new Date().toISOString() }] });
+    triggerNotif("Visita cerrada y equipos liberados");
     if (modal?.visit?.id === visitId) setModal(null);
   };
 
@@ -345,7 +381,12 @@ export default function App() {
     }
     updateData({ ...data, [type]: collection });
     setModal(null);
-    triggerNotif("Guardado exitoso");
+    triggerNotif("Cambios guardados");
+  };
+
+  const handleDelete = (type: string, id: string) => {
+    if (!window.confirm("¿Confirmas la eliminación definitiva?")) return;
+    updateData({ ...data, [type]: data[type].filter((item: any) => item.id !== id) });
   };
 
   const changeDate = (days: number) => {
@@ -371,10 +412,11 @@ export default function App() {
 
   return (
     <div className="h-screen w-full flex overflow-hidden bg-slate-100 font-sans text-slate-900 selection:bg-indigo-100">
+      {/* Sidebar Colapsable */}
       <aside className={`${isMenuCollapsed ? 'w-12' : 'w-48'} bg-slate-900 text-white flex flex-col transition-all duration-200 border-r border-slate-800 shrink-0`}>
         <div className="p-3 flex items-center justify-between border-b border-white/5">
           {!isMenuCollapsed && <span className="font-black text-[10px] uppercase truncate opacity-50 tracking-widest">{data.settings.appName}</span>}
-          <button onClick={() => setIsMenuCollapsed(!isMenuCollapsed)} className="p-1 hover:bg-white/10 rounded mx-auto"><Menu size={14}/></button>
+          <button onClick={() => setIsMenuCollapsed(!isMenuCollapsed)} className="p-1 hover:bg-white/10 rounded mx-auto transition-transform"><Menu size={14}/></button>
         </div>
         <div className="flex-1 overflow-y-auto custom-scrollbar p-1.5 space-y-0.5">
           <NavItem icon={<UserCheck size={16}/>} label="Visitas" active={view==='visits'} collapsed={isMenuCollapsed} onClick={() => setView('visits')} />
@@ -388,39 +430,43 @@ export default function App() {
             </div>
           )}
         </div>
-        <div className="p-1.5 border-t border-white/5 bg-black/20">
+        <div className="mt-auto p-1.5 border-t border-white/5 bg-black/20">
            <NavItem icon={<LogOut size={16}/>} label="Salir" collapsed={isMenuCollapsed} onClick={() => setUserRole(null)} color="text-red-400 hover:bg-red-500/10" />
            {!isMenuCollapsed && (
              <div className="px-2 py-1 flex items-center justify-between mt-1 pt-1 border-t border-white/5 opacity-50">
                 <div className={`w-1.5 h-1.5 rounded-full ${data.syncMetadata.status === 'synced' ? 'bg-emerald-500' : 'bg-orange-500'}`} />
-                <button onClick={() => handleSync()} className="text-white"><RefreshCw size={10} className={isSyncing ? 'animate-spin' : ''}/></button>
+                <button onClick={() => handleSync()} className="text-white hover:text-indigo-400 transition-colors"><RefreshCw size={10} className={isSyncing ? 'animate-spin' : ''}/></button>
              </div>
            )}
         </div>
       </aside>
 
       <main className="flex-1 h-screen overflow-y-auto custom-scrollbar flex flex-col bg-slate-50/50">
+        {/* Header Dinámico según Vista */}
         <header className="h-10 bg-white border-b border-slate-200 px-6 flex items-center justify-between shrink-0 sticky top-0 z-40 shadow-sm">
-          <div className="flex items-center gap-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+          <div className="flex items-center gap-2 text-[10px] font-black text-slate-300 uppercase tracking-widest">
             {userRole} <ChevronRight size={10}/> <span className="text-slate-900">{view}</span>
           </div>
           <div className="flex gap-2">
              <div className="relative flex items-center mr-2">
                 <Search size={10} className="absolute left-2 text-slate-400"/>
-                <input placeholder="Buscar..." value={searchQuery} onChange={(e)=>setSearchQuery(e.target.value)} className="pl-6 pr-2 py-1 border rounded bg-slate-50 text-[9px] w-32 outline-none focus:border-indigo-400 focus:bg-white transition-all shadow-inner" />
+                <input placeholder="Filtrar..." value={searchQuery} onChange={(e)=>setSearchQuery(e.target.value)} className="pl-6 pr-2 py-1 border rounded bg-slate-50 text-[9px] w-32 outline-none focus:border-indigo-400 transition-all shadow-inner" />
              </div>
-             {view === 'inventory' && userRole === 'admin' && <button onClick={() => setModal({ type: 'inventory_crud' })} className="btn-compact bg-slate-900 text-white shadow-md"><Plus size={12}/> Equipo</button>}
-             {view === 'guides' && userRole === 'admin' && <button onClick={() => setModal({ type: 'guide_crud' })} className="btn-compact bg-slate-900 text-white shadow-md"><Plus size={12}/> Guía</button>}
+             {view === 'inventory' && userRole === 'admin' && <button onClick={() => setModal({ type: 'inventory_crud' })} className="btn-compact bg-slate-900 text-white shadow-md"><Plus size={12}/> Nuevo Equipo</button>}
+             {view === 'guides' && userRole === 'admin' && <button onClick={() => setModal({ type: 'guide_crud' })} className="btn-compact bg-slate-900 text-white shadow-md"><Plus size={12}/> Nuevo Guía</button>}
+             {view === 'people' && <button onClick={() => setModal({ type: 'person_crud' })} className="btn-compact bg-indigo-600 text-white shadow-md"><Plus size={12}/> Persona</button>}
              <button onClick={() => setModal({ type: 'register_flow' })} className="btn-compact bg-indigo-600 text-white shadow-lg"><Plus size={12}/> Nueva Visita</button>
           </div>
         </header>
 
-        <div className="p-3">
+        <div className="p-3 w-full max-w-[1600px] mx-auto">
           {notif && (
-            <div className="fixed bottom-6 right-6 bg-slate-900 text-white px-4 py-2 rounded shadow-2xl flex items-center gap-2 z-[100] text-[9px] font-black animate-in fade-in">
+            <div className="fixed bottom-6 right-6 bg-slate-900 text-white px-4 py-2 rounded-lg shadow-2xl flex items-center gap-2 z-[100] text-[10px] font-black animate-in fade-in border border-white/10">
               <CheckCircle2 size={14} className="text-emerald-400" /> {notif}
             </div>
           )}
+
+          {view === 'status' && <StatusDashboard data={data} />}
 
           {view === 'visits' && (
             <div className="space-y-4">
@@ -432,25 +478,26 @@ export default function App() {
                     </div>
                     <button onClick={() => changeDate(1)} className="p-1 hover:bg-slate-100 rounded border"><ChevronRight size={12}/></button>
                   </div>
-                  <span className="text-[8px] font-black text-slate-300 uppercase tracking-widest">{filteredData.length} registros</span>
+                  <span className="text-[8px] font-black text-slate-300 uppercase tracking-widest">{filteredData.length} resultados del día</span>
                </div>
                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-2">
                   {paginatedData.map((visit: any) => {
                     const person = data.people.find((p:any)=>p.id === visit.personId);
                     return (
-                      <div key={visit.id} onClick={() => setModal({ type: 'visit_details', visit })} className={`card-base p-3 flex flex-col gap-3 cursor-pointer transition-all ${visit.status === 'finished' ? 'opacity-40 grayscale bg-slate-50' : 'hover:border-indigo-400 bg-white shadow-sm'}`}>
+                      <div key={visit.id} onClick={() => setModal({ type: 'visit_details', visit })} className={`card-base p-3 flex flex-col gap-3 cursor-pointer transition-all hover:shadow-md ${visit.status === 'finished' ? 'opacity-40 grayscale bg-slate-50' : 'hover:border-indigo-400 bg-white shadow-sm border-indigo-50'}`}>
                         <div className="flex justify-between items-start">
-                          <div className="w-8 h-8 bg-slate-100 text-slate-500 rounded flex items-center justify-center font-bold border text-[9px] uppercase">{person?.name?.charAt(0) || '?'}</div>
-                          {visit.status === 'active' && <div className="text-indigo-600 font-black text-[9px] uppercase">Activa</div>}
+                          <div className="w-8 h-8 bg-slate-100 text-slate-500 rounded flex items-center justify-center font-bold border text-[10px] uppercase">{person?.name?.charAt(0) || '?'}</div>
+                          {visit.status === 'active' && <div className="text-indigo-600 font-black text-[8px] uppercase tracking-widest bg-indigo-50 px-1.5 py-0.5 rounded border border-indigo-100 animate-pulse">Activa</div>}
                         </div>
-                        <div className="flex-1 min-h-[40px]">
-                          <p className="font-black text-[10px] truncate leading-tight uppercase">{person?.name || 'Cargando...'}</p>
+                        <div className="flex-1">
+                          <p className="font-black text-[10px] truncate leading-tight uppercase text-slate-700">{person?.name || 'Cargando...'}</p>
+                          <p className="text-[7px] opacity-40 font-bold uppercase tracking-tighter">{person?.document}</p>
                           <div className="flex flex-wrap gap-1 mt-1.5">
-                             {visit.equipmentIds.map((eid: string) => <span key={eid} className="px-1.5 py-0.5 bg-indigo-50 text-indigo-700 rounded text-[7px] font-black border border-indigo-100 uppercase leading-none">{eid}</span>)}
-                             {visit.equipmentIds.length === 0 && <span className="text-[7px] opacity-20 uppercase font-black">Sin equipos</span>}
+                             {visit.equipmentIds.map((eid: string) => <span key={eid} className="px-1.5 py-0.5 bg-slate-900 text-white rounded text-[7px] font-black uppercase leading-none shadow-sm">{eid}</span>)}
+                             {visit.equipmentIds.length === 0 && <span className="text-[7px] opacity-20 uppercase font-black italic">Sin equipos</span>}
                           </div>
                         </div>
-                        <div className="text-[7px] font-black uppercase text-center text-slate-300 py-1 bg-slate-50 rounded">Gestionar Detalles</div>
+                        <div className="text-[7px] font-black uppercase text-center text-indigo-400 py-1 bg-indigo-50/30 rounded border border-indigo-50/50">Detalles de Visita</div>
                       </div>
                     );
                   })}
@@ -463,26 +510,68 @@ export default function App() {
             <div className="card-base">
               <table className="w-full text-left">
                 <thead className="bg-slate-50/50">
-                  <tr><th className="table-header w-1/3">Equipo</th><th className="table-header">Barcode</th><th className="table-header">Estado</th><th className="table-header text-right">Ficha</th></tr>
+                  <tr><th className="table-header w-1/4">ID Equipo</th><th className="table-header">Barcode</th><th className="table-header">Estado</th><th className="table-header text-right">Ficha</th></tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 font-medium">
                   {paginatedData.map((item: any) => (
-                    <tr key={item.id} className="hover:bg-slate-50 transition-colors"><td className="table-cell font-black uppercase flex items-center gap-2 py-2"><Headphones size={12} className="opacity-30"/> {item.id}</td><td className="table-cell font-mono text-slate-400">{item.barcode}</td><td className="table-cell"><StatusBadge status={item.status} /></td><td className="table-cell text-right"><button onClick={() => setModal({ type: 'equipment_details', item })} className="p-1 text-slate-400 hover:text-indigo-600 transition-colors"><FileText size={14}/></button></td></tr>
+                    <tr key={item.id} className="hover:bg-slate-50 transition-colors"><td className="table-cell font-black uppercase flex items-center gap-2 py-2"><Headphones size={12} className="opacity-30"/> {item.id} <span className="opacity-20 text-[7px]">{item.model}</span></td><td className="table-cell font-mono text-slate-400 text-[9px]">{item.barcode}</td><td className="table-cell"><StatusBadge status={item.status} /></td><td className="table-cell text-right"><button onClick={() => setModal({ type: 'equipment_details', item })} className="p-1 text-slate-400 hover:text-indigo-600 transition-colors"><FileText size={14}/></button></td></tr>
                   ))}
                 </tbody>
               </table>
               <Pagination total={filteredData.length} current={currentPage} perPage={itemsPerPage} onChange={setCurrentPage} />
             </div>
           )}
+
+          {view === 'people' && (
+            <div className="card-base">
+              <table className="w-full text-left">
+                <thead className="bg-slate-50/50">
+                  <tr><th className="table-header w-1/3">Visitante</th><th className="table-header">Documento</th><th className="table-header">Historial</th><th className="table-header text-right">Acción</th></tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {paginatedData.map((p: any) => (
+                    <tr key={p.id}>
+                      <td className="table-cell font-black uppercase">{p.name} <p className="opacity-30 text-[8px] tracking-widest">{p.country}</p></td>
+                      <td className="table-cell text-slate-400 font-medium">{p.document}</td>
+                      <td className="table-cell"><button onClick={() => setModal({ type: 'person_history', person: p })} className="px-2 py-0.5 bg-slate-100 rounded text-[8px] font-black uppercase hover:bg-indigo-600 hover:text-white transition-all">Ver Visitas</button></td>
+                      <td className="table-cell text-right space-x-1">
+                        <button onClick={() => setModal({ type: 'person_crud', item: p })} className="p-1 border rounded hover:bg-slate-50"><Edit2 size={12}/></button>
+                        <button onClick={() => handleDelete('people', p.id)} className="p-1 border rounded hover:bg-red-50 text-red-400 transition-colors"><Trash2 size={12}/></button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {view === 'guides' && (
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+               {data.guides.map((g: any) => (
+                  <div key={g.id} className="card-base p-4 border-l-4 border-l-amber-500 flex flex-col gap-4 shadow-sm hover:shadow-md transition-all">
+                     <div className="flex justify-between items-start">
+                        <div className="p-2.5 bg-amber-50 text-amber-600 rounded-lg shadow-inner"><Briefcase size={22}/></div>
+                        <p className="text-[10px] font-black uppercase text-amber-600 tracking-tighter">{g.license}</p>
+                     </div>
+                     <div><h3 className="font-black text-xs uppercase mb-0.5 leading-none">{g.name}</h3><p className="text-[9px] opacity-40 font-bold uppercase">{g.id}</p></div>
+                     <div className="flex gap-2 border-t pt-3 mt-1">
+                        <button onClick={() => setModal({ type: 'guide_crud', item: g })} className="flex-1 btn-compact bg-slate-100 border hover:bg-white transition-all shadow-sm">Editar Perfil</button>
+                        <button onClick={() => handleDelete('guides', g.id)} className="px-3 border border-red-50 text-red-300 hover:text-red-500 transition-all rounded"><Trash2 size={12}/></button>
+                     </div>
+                  </div>
+               ))}
+            </div>
+          )}
         </div>
       </main>
 
+      {/* --- MODALES CENTRALIZADOS --- */}
       {modal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
-          <div className="bg-white rounded w-full max-w-sm shadow-2xl overflow-hidden flex flex-col max-h-[90vh] border border-slate-300 animate-in zoom-in duration-150">
+          <div className="bg-white rounded-lg w-full max-w-sm shadow-2xl overflow-hidden flex flex-col max-h-[90vh] border border-slate-300 animate-in zoom-in duration-150">
             <div className="px-3 py-2 bg-slate-900 text-white flex justify-between items-center shadow-md">
               <span className="text-[9px] font-black uppercase tracking-widest leading-none">{modal.type.replace('_', ' ')}</span>
-              <button onClick={() => setModal(null)} className="p-1 hover:bg-white/10 rounded"><X size={14}/></button>
+              <button onClick={() => setModal(null)} className="p-1 hover:bg-white/10 rounded transition-colors"><X size={14}/></button>
             </div>
             <div className="p-4 overflow-y-auto custom-scrollbar flex-1 bg-white">
                {modal.type === 'register_flow' && <UnifiedPersonForm peopleList={data.people} onSubmit={handleSaveVisitFlow} />}
@@ -490,12 +579,16 @@ export default function App() {
                {modal.type === 'visit_details' && (
                  <div className="space-y-6">
                     <VisitDetailsView visit={modal.visit} data={data} updateData={updateData} triggerNotif={triggerNotif} guides={data.guides} />
-                    <button onClick={() => handleFinishVisit(modal.visit.id)} className="w-full bg-slate-900 text-white py-2.5 rounded font-black text-[9px] uppercase shadow-lg hover:bg-red-600 transition-colors">Cerrar Visita y Recibir</button>
+                    <div className="pt-4 border-t flex flex-col gap-2">
+                       <button onClick={() => handleFinishVisit(modal.visit.id)} className="w-full bg-slate-900 text-white py-3 rounded font-black text-[10px] uppercase shadow-lg hover:bg-red-600 transition-colors">Cerrar Visita y Liberar</button>
+                       <button onClick={() => setModal(null)} className="w-full py-2 text-[9px] font-bold text-slate-400 uppercase tracking-widest text-center hover:text-slate-600">Continuar más tarde</button>
+                    </div>
                  </div>
                )}
                {modal.type === 'equipment_details' && <EquipmentSheet item={modal.item} data={data} updateData={updateData} refreshModal={(i:any)=>setModal({...modal, item:i})} />}
-               {modal.type === 'inventory_crud' && <GenericForm type="inventory" item={modal.item} onSubmit={(fd:any) => handleSaveEntity('inventory', fd, modal.item?.id)} />}
-               {modal.type === 'guide_crud' && <GenericForm type="guide" item={modal.item} onSubmit={(fd:any) => handleSaveEntity('guides', fd, modal.item?.id)} />}
+               {modal.type === 'inventory_crud' && <GenericCRUDForm type="inventory" item={modal.item} onSubmit={(fd:any) => handleSaveEntity('inventory', fd, modal.item?.id)} />}
+               {modal.type === 'guide_crud' && <GenericCRUDForm type="guide" item={modal.item} onSubmit={(fd:any) => handleSaveEntity('guides', fd, modal.item?.id)} />}
+               {modal.type === 'person_history' && <PersonHistoryView person={modal.person} visits={data.visits} />}
             </div>
           </div>
         </div>
@@ -504,15 +597,7 @@ export default function App() {
   );
 }
 
-// --- SOPORTE ---
-const StorageService = {
-  saveLocal(data: any) { localStorage.setItem(APP_STORAGE_KEY, JSON.stringify(data)); },
-  loadLocal() {
-    const saved = localStorage.getItem(APP_STORAGE_KEY);
-    try { return saved ? JSON.parse(saved) : INITIAL_DATA; } catch { return INITIAL_DATA; }
-  },
-  async syncToCloud(data: any) { return new Promise((res) => setTimeout(() => res(new Date().toISOString()), 600)); }
-};
+// --- SOPORTE LOGIN ---
 
 function LoginView({ onLogin }: any) {
   return (
