@@ -8,7 +8,7 @@ import {
   Timer, Scan, Phone, Mail, UserCheck, Calendar, Search, ListChecks
 } from 'lucide-react';
 
-// --- INTERFACES ---
+// --- INTERFACES PARA TYPESCRIPT ---
 interface MaintLog { id: number; date: string; notes: string; statusAtTime: string; }
 interface Equipment { id: string; model: string; status: string; barcode: string; maintenanceLogs: MaintLog[]; currentVisitId?: string; }
 interface Person { id: string; name: string; document: string; country: string; age: number; email: string; phone: string; type: 'visitor' | 'guide'; }
@@ -20,7 +20,7 @@ interface Visit {
   endTime?: string; 
   status: 'active' | 'finished';
   guideId?: string; 
-  date: string; // ISO Date YYYY-MM-DD para filtrado rápido
+  date: string;
 }
 
 // --- CONFIGURACIÓN ---
@@ -68,6 +68,11 @@ export default function App() {
 
   useEffect(() => { setData(StorageService.loadLocal()); }, []);
 
+  const triggerNotif = (msg: string) => {
+    setNotif(msg);
+    setTimeout(() => setNotif(null), 2500);
+  };
+
   const updateData = (newData: any) => {
     setData(newData);
     StorageService.saveLocal(newData);
@@ -84,18 +89,36 @@ export default function App() {
     } finally { setIsSyncing(false); }
   };
 
-  const triggerNotif = (msg: string) => {
-    setNotif(msg);
-    setTimeout(() => setNotif(null), 2500);
+  // --- LÓGICA DE NEGOCIO ---
+
+  const handleEntityCRUD = (e: React.FormEvent, type: string, id: string | null = null) => {
+    e.preventDefault();
+    const formData = new FormData(e.target as HTMLFormElement);
+    const obj: any = { id: id || `${type.charAt(0).toUpperCase()}-${Date.now()}` };
+    formData.forEach((value, key) => { obj[key] = value; });
+
+    let newCollection;
+    if (id) {
+      newCollection = data[type].map((v: any) => v.id === id ? { ...v, ...obj } : v);
+    } else {
+      if (type === 'inventory') { obj.status = 'available'; obj.maintenanceLogs = []; }
+      newCollection = [...data[type], obj];
+    }
+    updateData({ ...data, [type]: newCollection });
+    setModal(null);
+    triggerNotif("Guardado con éxito");
   };
 
-  // --- LÓGICA DE NEGOCIO ---
+  const handleDelete = (type: string, id: string) => {
+    if (!window.confirm("¿Confirmas la eliminación definitiva?")) return;
+    updateData({ ...data, [type]: data[type].filter((item: any) => item.id !== id) });
+    triggerNotif("Eliminado correctamente");
+  };
 
   const handleCreateVisit = (person: any, barcode: string, guideId?: string) => {
     const equipment = data.inventory.find((i: any) => i.barcode === barcode);
     if (!equipment || equipment.status !== 'available') return triggerNotif("Equipo no disponible");
 
-    // Guardar o actualizar persona
     let updatedPeople = [...data.people];
     const pIdx = updatedPeople.findIndex(p => p.id === person.id || p.document === person.document);
     if (pIdx > -1) {
@@ -115,31 +138,26 @@ export default function App() {
     };
 
     const newInventory = data.inventory.map((i: any) => i.id === equipment.id ? { ...i, status: 'in_use', currentVisitId: newVisit.id } : i);
-    
-    updateData({ 
-      ...data, 
-      people: updatedPeople, 
-      visits: [...data.visits, newVisit],
-      inventory: newInventory
-    });
+    updateData({ ...data, people: updatedPeople, visits: [...data.visits, newVisit], inventory: newInventory });
     setModal(null);
     setPrintData({ type: 'ingreso', person, equipment, timestamp: newVisit.startTime });
+  };
+
+  const handleFinishVisit = (visitId: string) => {
+    const visit = data.visits.find((v: any) => v.id === visitId);
+    if (!visit) return;
+    const newInventory = data.inventory.map((i: any) => visit.equipmentIds.includes(i.id) ? { ...i, status: 'available', currentVisitId: null } : i);
+    const newVisits = data.visits.map((v: any) => v.id === visitId ? { ...v, status: 'finished', endTime: new Date().toISOString() } : v);
+    updateData({ ...data, inventory: newInventory, visits: newVisits });
+    triggerNotif("Visita finalizada");
   };
 
   const handleBulkReturn = (barcodes: string[]) => {
     const foundEquipments = data.inventory.filter((i: any) => barcodes.includes(i.barcode) && i.status === 'in_use');
     if (foundEquipments.length === 0) return triggerNotif("No se encontraron equipos activos");
-
     const visitIdsToFinish = foundEquipments.map((i: any) => i.currentVisitId);
-    
-    const newInventory = data.inventory.map((i: any) => 
-      barcodes.includes(i.barcode) ? { ...i, status: 'available', currentVisitId: null } : i
-    );
-
-    const newVisits = data.visits.map((v: any) => 
-      visitIdsToFinish.includes(v.id) ? { ...v, status: 'finished', endTime: new Date().toISOString() } : v
-    );
-
+    const newInventory = data.inventory.map((i: any) => barcodes.includes(i.barcode) ? { ...i, status: 'available', currentVisitId: null } : i);
+    const newVisits = data.visits.map((v: any) => visitIdsToFinish.includes(v.id) ? { ...v, status: 'finished', endTime: new Date().toISOString() } : v);
     updateData({ ...data, inventory: newInventory, visits: newVisits });
     triggerNotif(`Procesados ${foundEquipments.length} equipos exitosamente`);
     setModal(null);
@@ -156,7 +174,6 @@ export default function App() {
 
   return (
     <div className="h-screen w-full flex overflow-hidden bg-slate-100 font-sans">
-      {/* Sidebar Colapsable */}
       <aside className={`${isMenuCollapsed ? 'w-14' : 'w-52'} bg-slate-900 text-white flex flex-col transition-all duration-300 border-r border-slate-800 shrink-0`}>
         <div className="p-4 flex items-center justify-between border-b border-white/5">
           {!isMenuCollapsed && <span className="font-black text-[10px] uppercase tracking-tighter truncate opacity-60">{data.settings.appName}</span>}
@@ -164,22 +181,19 @@ export default function App() {
             {isMenuCollapsed ? <Menu size={14}/> : <ChevronLeft size={14}/>}
           </button>
         </div>
-
         <div className="flex-1 overflow-y-auto custom-scrollbar p-2 space-y-0.5">
           <NavItem icon={<UserCheck size={16}/>} label="Visitas" active={view==='visits'} collapsed={isMenuCollapsed} onClick={() => setView('visits')} />
           <NavItem icon={<Headphones size={16}/>} label="Inventario" active={view==='inventory'} collapsed={isMenuCollapsed} onClick={() => setView('inventory')} />
           <NavItem icon={<Users size={16}/>} label="Personas" active={view==='people'} collapsed={isMenuCollapsed} onClick={() => setView('people')} />
           <NavItem icon={<Briefcase size={16}/>} label="Guías" active={view==='guides'} collapsed={isMenuCollapsed} onClick={() => setView('guides')} />
-          
           {userRole === 'admin' && (
             <>
               <div className="my-2 border-t border-white/5" />
               <NavItem icon={<BarChart3 size={16}/>} label="Métricas" active={view==='stats'} collapsed={isMenuCollapsed} onClick={() => setView('stats')} />
-              <NavItem icon={<Settings size={16}/>} label="Ajustes" active={view==='settings'} collapsed={isMenuCollapsed} onClick={() => setView('settings')} />
+              <NavItem icon={<Settings size={16}/>} label="Configuración" active={view==='settings'} collapsed={isMenuCollapsed} onClick={() => setView('settings')} />
             </>
           )}
         </div>
-
         <div className="mt-auto p-2 border-t border-white/5 bg-black/20">
            <NavItem icon={<LogOut size={16}/>} label="Salir" collapsed={isMenuCollapsed} onClick={() => setUserRole(null)} color="text-red-400 hover:bg-red-500/10" />
            {!isMenuCollapsed && (
@@ -194,7 +208,6 @@ export default function App() {
         </div>
       </aside>
 
-      {/* Main Area */}
       <main className="flex-1 h-screen overflow-y-auto custom-scrollbar flex flex-col">
         <header className="h-12 bg-white border-b border-slate-200 px-6 flex items-center justify-between shrink-0 sticky top-0 z-40 shadow-sm">
           <div className="flex items-center gap-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
@@ -210,14 +223,13 @@ export default function App() {
 
         <div className="p-4">
           {notif && (
-            <div className="fixed bottom-6 right-6 bg-slate-900 text-white px-4 py-2 rounded shadow-2xl flex items-center gap-2 z-50 text-[10px] font-black animate-in fade-in slide-in-from-bottom-2">
+            <div className="fixed bottom-6 right-6 bg-slate-900 text-white px-4 py-2 rounded shadow-2xl flex items-center gap-2 z-50 text-[10px] font-black border border-white/10 animate-in fade-in slide-in-from-bottom-2">
               <CheckCircle2 size={14} className="text-emerald-400" /> {notif}
             </div>
           )}
 
           {view === 'visits' && (
             <div className="space-y-4">
-               {/* Date Navigator */}
                <div className="flex items-center justify-between bg-white p-2 rounded border border-slate-200 shadow-sm">
                   <div className="flex items-center gap-2">
                     <button onClick={() => changeDate(-1)} className="p-1.5 hover:bg-slate-100 rounded border"><ChevronLeft size={14}/></button>
@@ -231,7 +243,6 @@ export default function App() {
                      <span className="flex items-center gap-1 opacity-40"><div className="w-2 h-2 rounded-full bg-slate-300"/> Finalizadas: {data.visits.filter((v:any)=>v.date === selectedDate && v.status==='finished').length}</span>
                   </div>
                </div>
-
                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-3">
                   {data.visits.filter((v:any)=>v.date === selectedDate).sort((a:any, b:any) => b.startTime.localeCompare(a.startTime)).map((visit: any) => {
                     const person = data.people.find((p:any)=>p.id === visit.personId);
@@ -327,6 +338,7 @@ export default function App() {
                       </td>
                       <td className="table-cell text-right">
                         <button onClick={() => setModal({ type: 'person_crud', item: p })} className="p-1.5 border rounded hover:bg-slate-100"><Edit2 size={12}/></button>
+                        <button onClick={() => handleDelete('people', p.id)} className="p-1.5 ml-1 text-slate-300 hover:text-red-500"><Trash2 size={12}/></button>
                       </td>
                     </tr>
                   ))}
@@ -370,11 +382,11 @@ export default function App() {
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
           <div className="bg-white rounded w-full max-w-md shadow-2xl overflow-hidden flex flex-col max-h-[90vh] border border-slate-300">
             <div className="px-4 py-2 bg-slate-900 text-white flex justify-between items-center shadow-lg">
-              <span className="text-[9px] font-black uppercase tracking-[0.2em]">{modal.type.replace('_', ' ')}</span>
+              <span className="text-[9px] font-black uppercase tracking-widest">{modal.type.replace('_', ' ')}</span>
               <button onClick={() => setModal(null)} className="p-1 hover:bg-white/10 rounded"><X size={14}/></button>
             </div>
             <div className="p-5 overflow-y-auto custom-scrollbar flex-1 bg-white">
-               {modal.type === 'register_flow' && <RegisterFlow onComplete={handleCreateVisit} data={data} />}
+               {modal.type === 'register_flow' && <RegisterFlow onComplete={handleCreateVisit} data={data} triggerNotif={triggerNotif} />}
                {modal.type === 'equipment_details' && <EquipmentSheet item={modal.item} data={data} updateData={updateData} refreshModal={(i:any)=>setModal({...modal, item:i})} />}
                {modal.type === 'bulk_return' && <BulkReturnModule onComplete={handleBulkReturn} inventory={data.inventory} />}
                {modal.type === 'person_history' && <PersonHistoryView person={modal.person} visits={data.visits} inventory={data.inventory} />}
@@ -401,19 +413,7 @@ const NavItem = ({ icon, label, active, collapsed, onClick, color = "text-slate-
   </button>
 );
 
-const StatusBadge = ({ status }: { status: string }) => {
-  const cfg: any = {
-    available: { label: 'Libre', class: 'text-emerald-600 bg-emerald-50 border-emerald-100' },
-    in_use: { label: 'En Uso', class: 'text-amber-600 bg-amber-50 border-amber-100' },
-    maint_repair: { label: 'Taller', class: 'text-red-600 bg-red-50 border-red-100' },
-    maint_qc: { label: 'Calidad', class: 'text-indigo-600 bg-indigo-50 border-indigo-100' }
-  };
-  const c = cfg[status] || cfg.available;
-  return <span className={`px-2 py-0.5 rounded-[3px] text-[8px] font-black border uppercase tracking-widest ${c.class}`}>{c.label}</span>;
-};
-
-// --- FLUJO REGISTRO INTELIGENTE ---
-const RegisterFlow = ({ onComplete, data }: any) => {
+const RegisterFlow = ({ onComplete, data, triggerNotif }: any) => {
   const [step, setStep] = useState(1);
   const [person, setPerson] = useState<any>(null);
   const [scanValue, setScanValue] = useState('');
@@ -423,14 +423,12 @@ const RegisterFlow = ({ onComplete, data }: any) => {
     e.preventDefault();
     if (!scanValue) return;
 
-    // Si son 20 dígitos es escaneo estricto
     if (scanValue.length === 20 && /^\d+$/.test(scanValue)) {
        const doc = scanValue.slice(0, 10);
        const existing = data.people.find((p:any) => p.document === doc);
        if (existing) { setPerson(existing); setStep(2); }
-       else { setPerson({ document: doc, name: '', phone: '', email: '', country: 'Colombia', age: 25, type: 'visitor' }); setStep(1.5); }
+       else { setPerson({ document: doc, name: '', phone: '', email: '', country: 'España', age: 25, type: 'visitor' }); setStep(1.5); }
     } else {
-       // Búsqueda por texto (Nombre o Documento parcial)
        const matches = data.people.filter((p:any) => 
          p.name.toLowerCase().includes(scanValue.toLowerCase()) || p.document.includes(scanValue)
        );
@@ -449,8 +447,15 @@ const RegisterFlow = ({ onComplete, data }: any) => {
           <Scan size={32} className="text-indigo-400"/>
           <div className="w-full">
             <p className="text-[10px] font-black uppercase text-indigo-900 mb-2">Escanear o Buscar Persona</p>
-            <form onSubmit={handleLookup} onBlur={() => !scanValue && triggerNotif("Esperando escaneo...")}>
-              <input value={scanValue} onChange={(e)=>setScanValue(e.target.value)} autoFocus className="input-base text-center text-lg font-black tracking-widest h-12" placeholder="DOC / NOMBRE" />
+            <form onSubmit={handleLookup}>
+              <input 
+                value={scanValue} 
+                onChange={(e)=>setScanValue(e.target.value)} 
+                autoFocus 
+                onBlur={() => !scanValue && triggerNotif("Esperando escaneo...")}
+                className="input-base text-center text-lg font-black tracking-widest h-12" 
+                placeholder="DOC / NOMBRE" 
+              />
             </form>
           </div>
        </div>
@@ -463,7 +468,7 @@ const RegisterFlow = ({ onComplete, data }: any) => {
                 <ChevronRight size={14} className="text-indigo-600"/>
               </button>
             ))}
-            <button onClick={() => { setPerson({ document: scanValue, name: '', phone: '', email: '', country: '', age: '', type: 'visitor' }); setStep(1.5); }} className="w-full py-2 text-[9px] font-black uppercase text-indigo-600 border border-indigo-100 rounded">Ninguna, Crear Nueva</button>
+            <button onClick={() => { setPerson({ document: scanValue, name: '', phone: '', email: '', country: '', age: '', type: 'visitor' }); setStep(1.5); }} className="w-full py-2 text-[9px] font-black uppercase text-indigo-600 border border-indigo-100 rounded">Nueva Persona</button>
          </div>
        )}
     </div>
@@ -472,7 +477,7 @@ const RegisterFlow = ({ onComplete, data }: any) => {
   if (step === 1.5) return (
     <form onSubmit={(e: any) => { e.preventDefault(); setStep(2); }} className="space-y-3">
        <InputField label="Nombre Completo" value={person.name} onChange={(e:any)=>setPerson({...person, name: e.target.value})} required />
-       <InputField label="Cédula / Pasaporte" value={person.document} onChange={(e:any)=>setPerson({...person, document: e.target.value})} required />
+       <InputField label="Cédula / Documento" value={person.document} onChange={(e:any)=>setPerson({...person, document: e.target.value})} required />
        <div className="grid grid-cols-2 gap-3">
           <InputField label="Teléfono" value={person.phone} onChange={(e:any)=>setPerson({...person, phone: e.target.value})} required />
           <InputField label="Email" type="email" value={person.email} onChange={(e:any)=>setPerson({...person, email: e.target.value})} required />
@@ -481,21 +486,21 @@ const RegisterFlow = ({ onComplete, data }: any) => {
           <InputField label="País" value={person.country} onChange={(e:any)=>setPerson({...person, country: e.target.value})} required />
           <InputField label="Edad" type="number" value={person.age} onChange={(e:any)=>setPerson({...person, age: e.target.value})} required />
        </div>
-       <button type="submit" className="w-full bg-slate-900 text-white py-3 rounded font-black text-[10px] uppercase mt-4">Asignar Equipo</button>
+       <button type="submit" className="w-full bg-slate-900 text-white py-3 rounded font-black text-[10px] uppercase mt-4">Siguiente: Asignar Equipo</button>
     </form>
   );
 
   return (
     <form onSubmit={(e:any) => { e.preventDefault(); onComplete(person, e.target.barcode.value, e.target.guideId.value); }} className="space-y-4">
        <div className="bg-indigo-50 p-3 rounded border border-indigo-100 flex items-center justify-between">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 truncate">
              <div className="w-7 h-7 bg-indigo-600 text-white rounded flex items-center justify-center font-bold text-xs">{person.name.charAt(0)}</div>
-             <p className="text-xs font-black truncate max-w-[150px]">{person.name}</p>
+             <p className="text-xs font-black truncate">{person.name}</p>
           </div>
           <button type="button" onClick={() => setStep(1.5)} className="text-[9px] font-black text-indigo-600 uppercase">Editar</button>
        </div>
        <div>
-         <label className="text-[9px] font-black uppercase text-slate-400 ml-1">Responsable (Guía Opcional)</label>
+         <label className="text-[9px] font-black uppercase text-slate-400 ml-1">Responsable (Guía)</label>
          <select name="guideId" className="input-base">
             <option value="">Individual (Sin Guía)</option>
             {data.guides.map((g:any) => <option key={g.id} value={g.id}>{g.name}</option>)}
@@ -505,12 +510,11 @@ const RegisterFlow = ({ onComplete, data }: any) => {
           <p className="text-[10px] font-black uppercase text-indigo-600 flex items-center justify-center gap-2"><Headphones size={14}/> Escanee Código Equipo</p>
           <input name="barcode" autoFocus className="w-full bg-transparent text-center font-mono text-3xl font-black outline-none" placeholder="00000" required />
        </div>
-       <button type="submit" className="w-full bg-indigo-600 text-white py-3 rounded font-black text-[10px] uppercase shadow-lg shadow-indigo-100">Registrar Ingreso</button>
+       <button type="submit" className="w-full bg-indigo-600 text-white py-3 rounded font-black text-[10px] uppercase shadow-lg">Registrar Ingreso</button>
     </form>
   );
 };
 
-// --- MÓDULO RECIBO RÁPIDO ---
 const BulkReturnModule = ({ onComplete, inventory }: any) => {
   const [list, setList] = useState<string[]>([]);
   const [input, setInput] = useState('');
@@ -518,9 +522,9 @@ const BulkReturnModule = ({ onComplete, inventory }: any) => {
   const add = (e: React.FormEvent) => {
     e.preventDefault();
     if (!input) return;
-    const eq = inventory.find((i:any)=>i.barcode === input);
+    const eq = inventory.find((i:any)=>i.barcode === input || i.id === input);
     if (!eq) return setInput('');
-    if (!list.includes(input)) setList([...list, input]);
+    if (!list.includes(eq.barcode)) setList([...list, eq.barcode]);
     setInput('');
   };
 
@@ -528,9 +532,9 @@ const BulkReturnModule = ({ onComplete, inventory }: any) => {
     <div className="space-y-4">
        <div className="p-4 bg-emerald-50 rounded border border-emerald-100 flex flex-col items-center gap-2">
           <Scan className="text-emerald-600" size={24}/>
-          <p className="text-[10px] font-black uppercase text-emerald-800">Escaneo Masivo de Devolución</p>
+          <p className="text-[10px] font-black uppercase text-emerald-800">Recibo Masivo</p>
           <form onSubmit={add} className="w-full">
-            <input value={input} onChange={(e)=>setInput(e.target.value)} autoFocus className="input-base text-center text-xl font-black" placeholder="SCAN..." />
+            <input value={input} onChange={(e)=>setInput(e.target.value)} autoFocus className="input-base text-center text-xl font-black" placeholder="SCAN BARCODE..." />
           </form>
        </div>
        <div className="max-h-40 overflow-y-auto custom-scrollbar border rounded">
@@ -542,69 +546,13 @@ const BulkReturnModule = ({ onComplete, inventory }: any) => {
                 {list.map(b => (
                   <tr key={b}><td className="px-3 py-1.5 font-bold">{inventory.find((i:any)=>i.barcode===b)?.id || b}</td><td className="px-3 py-1.5 text-right"><button onClick={()=>setList(list.filter(x=>x!==b))}><Trash2 size={10} className="text-slate-300 hover:text-red-500"/></button></td></tr>
                 ))}
-                {list.length === 0 && <tr><td colSpan={2} className="p-4 text-center opacity-30 italic">Sin equipos en lista</td></tr>}
              </tbody>
           </table>
        </div>
-       <button onClick={() => onComplete(list)} disabled={list.length===0} className="w-full bg-emerald-600 text-white py-3 rounded font-black text-[10px] uppercase shadow-lg shadow-emerald-100 disabled:opacity-50">Procesar Devolución Masiva ({list.length})</button>
+       <button onClick={() => onComplete(list)} disabled={list.length===0} className="w-full bg-emerald-600 text-white py-3 rounded font-black text-[10px] uppercase shadow-lg disabled:opacity-50">Finalizar Masivamente ({list.length})</button>
     </div>
   );
 };
-
-// --- OTROS COMPONENTES ---
-const PersonHistoryView = ({ person, visits, inventory }: any) => {
-   const myVisits = visits.filter((v:any) => v.personId === person.id);
-   return (
-     <div className="space-y-4">
-        <div className="border-b pb-2">
-           <h3 className="font-black text-xs uppercase">{person.name}</h3>
-           <p className="text-[10px] opacity-40 uppercase">{person.document} • {person.country}</p>
-        </div>
-        <div className="space-y-2">
-           {myVisits.map((v:any) => (
-             <div key={v.id} className="p-2 border rounded bg-slate-50 flex justify-between items-center">
-                <div className="text-[10px]">
-                   <p className="font-black uppercase tracking-tighter">{v.date}</p>
-                   <p className="opacity-60">{v.equipmentIds.join(', ')}</p>
-                </div>
-                <span className={`text-[8px] font-black uppercase px-2 py-0.5 rounded border ${v.status==='active' ? 'bg-indigo-600 text-white' : 'bg-white text-slate-400'}`}>{v.status}</span>
-             </div>
-           ))}
-        </div>
-     </div>
-   );
-};
-
-const GenericForm = ({ type, item, onSubmit }: any) => (
-  <form onSubmit={onSubmit} className="space-y-4">
-    <div className="grid grid-cols-2 gap-3">
-      {type === 'inventory' && (
-        <>
-          <div><label className="text-[9px] font-black uppercase text-slate-400">ID Equipo</label><input name="id" defaultValue={item?.id} disabled={!!item} className="input-base" required /></div>
-          <div><label className="text-[9px] font-black uppercase text-slate-400">Barcode</label><input name="barcode" defaultValue={item?.barcode} className="input-base" required /></div>
-          <div className="col-span-2"><label className="text-[9px] font-black uppercase text-slate-400">Modelo</label><input name="model" defaultValue={item?.model || 'Standard'} className="input-base" required /></div>
-        </>
-      )}
-      {type === 'guide' && (
-        <>
-          <div className="col-span-2"><label className="text-[9px] font-black uppercase text-slate-400">Nombre del Guía</label><input name="name" defaultValue={item?.name} className="input-base" required /></div>
-          <div><label className="text-[9px] font-black uppercase text-slate-400">Licencia</label><input name="license" defaultValue={item?.license} className="input-base" required /></div>
-          <div><label className="text-[9px] font-black uppercase text-slate-400">Teléfono</label><input name="phone" defaultValue={item?.phone} className="input-base" required /></div>
-        </>
-      )}
-      {type === 'person' && (
-        <>
-          <div className="col-span-2"><label className="text-[9px] font-black uppercase text-slate-400">Nombre</label><input name="name" defaultValue={item?.name} className="input-base" required /></div>
-          <div><label className="text-[9px] font-black uppercase text-slate-400">Doc</label><input name="document" defaultValue={item?.document} className="input-base" required /></div>
-          <div><label className="text-[9px] font-black uppercase text-slate-400">País</label><input name="country" defaultValue={item?.country} className="input-base" required /></div>
-          <div><label className="text-[9px] font-black uppercase text-slate-400">Tel</label><input name="phone" defaultValue={item?.phone} className="input-base" /></div>
-          <div><label className="text-[9px] font-black uppercase text-slate-400">Mail</label><input name="email" type="email" defaultValue={item?.email} className="input-base" /></div>
-        </>
-      )}
-    </div>
-    <button type="submit" className="w-full bg-slate-900 text-white py-3 rounded font-black text-[10px] uppercase mt-4">Guardar Registro</button>
-  </form>
-);
 
 const EquipmentSheet = ({ item, data, updateData, refreshModal }: any) => {
   const changeStatus = (st: string) => {
@@ -627,7 +575,7 @@ const EquipmentSheet = ({ item, data, updateData, refreshModal }: any) => {
           {item.maintenanceLogs.map((l:any) => <div key={l.id} className="mb-2 border-l-2 border-indigo-400 pl-2"><strong>{l.date}</strong>: {l.notes}</div>)}
        </div>
        <div className="flex gap-1">
-          <input id="m-note" className="input-base" placeholder="Nueva nota..." />
+          <textarea id="m-note" className="input-base h-12" placeholder="Nota..." />
           <button onClick={()=>{
              const n = (document.getElementById('m-note') as any).value;
              if(!n) return;
@@ -636,23 +584,75 @@ const EquipmentSheet = ({ item, data, updateData, refreshModal }: any) => {
              updateData({...data, inventory: ni});
              refreshModal(ni.find((i:any)=>i.id===item.id));
              (document.getElementById('m-note') as any).value = "";
-          }} className="p-1.5 bg-slate-900 text-white rounded"><Save size={14}/></button>
+          }} className="px-3 bg-slate-900 text-white rounded"><Save size={14}/></button>
        </div>
     </div>
   );
 };
 
+const PersonHistoryView = ({ person, visits, inventory }: any) => {
+   const myVisits = visits.filter((v:any) => v.personId === person.id);
+   return (
+     <div className="space-y-4">
+        <div className="border-b pb-2">
+           <h3 className="font-black text-xs uppercase">{person.name}</h3>
+           <p className="text-[10px] opacity-40 uppercase">{person.document}</p>
+        </div>
+        <div className="space-y-2">
+           {myVisits.map((v:any) => (
+             <div key={v.id} className="p-2 border rounded bg-slate-50 flex justify-between items-center text-[10px]">
+                <div><p className="font-black uppercase">{v.date}</p><p className="opacity-60">{v.equipmentIds.join(', ')}</p></div>
+                <span className={`text-[8px] font-black uppercase px-2 py-0.5 rounded border ${v.status==='active' ? 'bg-indigo-600 text-white' : 'bg-white'}`}>{v.status}</span>
+             </div>
+           ))}
+        </div>
+     </div>
+   );
+};
+
+const GenericForm = ({ type, item, onSubmit }: any) => (
+  <form onSubmit={onSubmit} className="space-y-4">
+    <div className="grid grid-cols-2 gap-3">
+      {type === 'inventory' && (
+        <>
+          <div><label className="text-[9px] font-black uppercase text-slate-400">ID Equipo</label><input name="id" defaultValue={item?.id} disabled={!!item} className="input-base" required /></div>
+          <div><label className="text-[9px] font-black uppercase text-slate-400">Barcode</label><input name="barcode" defaultValue={item?.barcode} className="input-base" required /></div>
+          <div className="col-span-2"><label className="text-[9px] font-black uppercase text-slate-400">Modelo</label><input name="model" defaultValue={item?.model || 'Standard'} className="input-base" required /></div>
+        </>
+      )}
+      {type === 'guide' && (
+        <>
+          <div className="col-span-2"><label className="text-[9px] font-black uppercase text-slate-400">Nombre del Guía</label><input name="name" defaultValue={item?.name} className="input-base" required /></div>
+          <div><label className="text-[9px] font-black uppercase text-slate-400">Licencia</label><input name="license" defaultValue={item?.license} className="input-base" required /></div>
+          <div><label className="text-[9px] font-black uppercase text-slate-400">Teléfono</label><input name="phone" defaultValue={item?.phone} className="input-base" required /></div>
+          <div><label className="text-[9px] font-black uppercase text-slate-400">Días Laborados</label><input name="daysWorked" type="number" defaultValue={item?.daysWorked || 0} className="input-base" required /></div>
+        </>
+      )}
+      {type === 'person' && (
+        <>
+          <div className="col-span-2"><label className="text-[9px] font-black uppercase text-slate-400">Nombre</label><input name="name" defaultValue={item?.name} className="input-base" required /></div>
+          <div><label className="text-[9px] font-black uppercase text-slate-400">Doc</label><input name="document" defaultValue={item?.document} className="input-base" required /></div>
+          <div><label className="text-[9px] font-black uppercase text-slate-400">País</label><input name="country" defaultValue={item?.country} className="input-base" required /></div>
+          <div><label className="text-[9px] font-black uppercase text-slate-400">Tel</label><input name="phone" defaultValue={item?.phone} className="input-base" /></div>
+          <div><label className="text-[9px] font-black uppercase text-slate-400">Mail</label><input name="email" type="email" defaultValue={item?.email} className="input-base" /></div>
+        </>
+      )}
+    </div>
+    <button type="submit" className="w-full bg-slate-900 text-white py-3 rounded font-black text-[10px] uppercase mt-4 tracking-widest">Guardar Registro</button>
+  </form>
+);
+
 const PrintView = ({ data, settings, onBack }: any) => (
-  <div className="min-h-screen bg-slate-100 p-10 flex flex-col items-center">
-    <div className="w-64 bg-white border-2 border-slate-300 p-6 text-center font-mono text-[10px] shadow-xl">
+  <div className="min-h-screen bg-white p-10 flex flex-col items-center">
+    <div className="w-64 border-2 border-slate-300 p-6 text-center font-mono text-[10px]">
       <img src={settings.logo} className="h-10 mx-auto mb-2" />
       <p className="font-black mb-4 uppercase">{settings.appName}</p>
       <div className="text-left border-y border-slate-100 py-2 space-y-1 mb-4">
         <p><strong>OP:</strong> {data.type.toUpperCase()}</p>
-        <p><strong>NOMBRE:</strong> {data.person?.name}</p>
+        <p><strong>PERSONA:</strong> {data.person?.name}</p>
         <p><strong>EQUIPO:</strong> {data.equipment?.id}</p>
       </div>
-      <p className="text-[8px] opacity-40 italic mb-4">{settings.terms}</p>
+      <p className="text-[8px] opacity-40 leading-none italic mb-4">{settings.terms}</p>
       <div className="h-10 border border-slate-100 flex items-center justify-center text-slate-200 uppercase">Firma</div>
     </div>
     <div className="mt-6 flex gap-2 no-print"><button onClick={() => window.print()} className="btn-compact bg-slate-900 text-white px-6">Imprimir</button><button onClick={onBack} className="btn-compact border px-6">Regresar</button></div>
@@ -674,7 +674,7 @@ const LoginView = ({ onLogin }: any) => (
 
 const InputField = ({ label, ...props }: any) => (
   <div className="w-full text-left">
-    <label className="block text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1 ml-1">{label}</label>
+    <label className="block text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1.5 ml-1">{label}</label>
     <input className="input-base" {...props} />
   </div>
 );
