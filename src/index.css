@@ -2,56 +2,60 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Configuración de Reseteo y Base */
 :root {
---foreground-rgb: 33, 53, 71;
---background-rgb: 248, 250, 252;
+  --foreground-rgb: 33, 53, 71;
+  --background-rgb: 242, 245, 248;
 }
 
-{
-box-sizing: border-box;
-padding: 0;
-margin: 0;
+* {
+  box-sizing: border-box;
+  padding: 0;
+  margin: 0;
 }
 
 html, body, #root {
-height: 100%;
-width: 100%;
-overflow: hidden;
-background-color: rgb(var(--background-rgb));
-color: rgb(var(--foreground-rgb));
-font-family: 'Inter', system-ui, -apple-system, sans-serif;
--webkit-font-smoothing: antialiased;
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+  background-color: rgb(var(--background-rgb));
+  color: rgb(var(--foreground-rgb));
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  font-size: 13px; /* Reducción de base para alta densidad */
+  -webkit-font-smoothing: antialiased;
 }
 
-/* Scrollbar Minimalista para toda la App */
+/* Scrollbar Minimalista */
 .custom-scrollbar::-webkit-scrollbar {
-width: 4px;
+  width: 4px;
+  height: 4px;
 }
 .custom-scrollbar::-webkit-scrollbar-track {
-background: transparent;
+  background: transparent;
 }
 .custom-scrollbar::-webkit-scrollbar-thumb {
-background: #cbd5e1;
-border-radius: 10px;
+  background: #cbd5e1;
+  border-radius: 4px;
 }
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-background: #94a3b8;
+  background: #94a3b8;
 }
 
-/* Clases de utilidad para componentes más compactos */
 @layer components {
-.btn-compact {
-@apply px-4 py-2 rounded-xl text-xs font-bold transition-all active:scale-95;
-}
+  .btn-compact {
+    @apply px-3 py-1.5 rounded text-xs font-semibold transition-all active:scale-95 flex items-center gap-2;
+  }
+  
+  .card-base {
+    @apply bg-white border border-slate-200 shadow-sm rounded-md overflow-hidden;
+  }
 
-.card-base {
-@apply bg-white border border-slate-100 shadow-sm rounded-[2rem];
-}
+  .input-base {
+    @apply w-full px-3 py-2 rounded border border-slate-200 bg-slate-50 text-xs outline-none focus:border-indigo-500 focus:bg-white transition-all;
+  }
 }
 
 @media print {
-.no-print {
-display: none !important;
-}
+  .no-print {
+    display: none !important;
+  }
 }
