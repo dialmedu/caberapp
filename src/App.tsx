@@ -1,752 +1,817 @@
-import { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
-  Plus, EyeOff, Layers, Home, Lock,
-  Share2, Menu, X, Palette, Sparkles, Trash2, Settings,
-  Edit3, GripVertical, Monitor, Tv, FileText, ExternalLink, FileCode, Check, AlertCircle, Smartphone, ArrowLeft, MousePointer2, Volume2, Maximize, Link as LinkIcon, GitBranch, Paintbrush, AlignCenter
+  Users, Headphones, ArrowRightLeft, LayoutDashboard, Download, 
+  LogOut, CheckCircle2, CloudOff, AlertCircle, Database, UserPlus, 
+  History, Settings, BarChart3, Printer, X, Plus, Save, Briefcase, 
+  Wrench, FileText, Camera, Edit2, Trash2, RefreshCw, Upload, Globe, User,
+  Clock, Hammer, Settings2, ShieldCheck
 } from 'lucide-react';
 
-// --- INTERFACES ---
-interface Block {
-  id: string;
-  type: string; 
-  content: string;
-  position: 'relative' | 'fixed'; 
-  actionType: string; 
-  actionResult: string; 
-  clueLink: string;     
-  triggerValue?: string; 
-  mouseIcon?: string;    
-  audioUrl?: string;     
-  posProps?: { top?: string; bottom?: string; left?: string; right?: string }; 
-  subBlock?: Block; 
-  extraStyles?: any; // Atributos CSS personalizados (ahora gestionados vía formulario)
-  options: { scale: number };
-}
-
-interface Page {
-  id: string;
-  title: string;
-  theme: string;
-  publishDate: string;
-  blocks: Block[];
-  no_pc?: boolean;     
-  no_mobile?: boolean; 
-  layoutWidth?: string; 
-  backgroundImage?: string; 
-}
-
-interface Config {
-  pages: { [key: string]: Page };
-  pageOrder: string[]; 
-  homePageId: string;
-}
-
-const INITIAL_DATA: Config = {
-  pages: {
-    'inicio': {
-      id: 'inicio', title: 'El Umbral', theme: 'journal', publishDate: new Date().toISOString(),
-      blocks: [
-        { id: 'b1', type: 'text', content: 'Escribe "enigma" para avanzar.', position: 'relative', actionType: 'input-match', triggerValue: 'enigma', actionResult: 'discover', clueLink: 'inicio', options: { scale: 100 }, extraStyles: {} }
-      ],
-      layoutWidth: '100%'
+// --- ESTILOS GLOBALES ---
+const GlobalStyles = () => (
+  <style>{`
+    .custom-scrollbar::-webkit-scrollbar {
+      width: 6px;
     }
+    .custom-scrollbar::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb {
+      background: #e2e8f0;
+      border-radius: 10px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+      background: #cbd5e1;
+    }
+  `}</style>
+);
+
+// --- CONFIGURACIÓN Y MOCKS ---
+const APP_STORAGE_KEY = "AUDIOGUIDE_PRO_V4";
+const MOCK_API_URL = "https://api-sync-mock.com/v1"; 
+
+const INITIAL_DATA = {
+  settings: {
+    logo: "https://via.placeholder.com/150?text=LOGO",
+    terms: "El titular se compromete a devolver el equipo en perfecto estado. En caso de pérdida, se cobrará el valor total.",
+    appName: "Audioguía Pro"
   },
-  pageOrder: ['inicio'],
-  homePageId: 'inicio'
+  syncMetadata: {
+    lastSync: null,
+    status: 'synced'
+  },
+  inventory: [
+    { id: "AG-001", model: "Standard", status: "available", barcode: "10001", maintenanceLogs: [{ id: 1, date: "2024-01-10", notes: "Cambio de batería", statusAtTime: "maint_repair" }] },
+    { id: "AG-002", model: "Standard", status: "in_use", barcode: "10002", visitorId: "V-101", maintenanceLogs: [] },
+    { id: "AG-003", model: "Premium", status: "maint_pending", barcode: "20001", maintenanceLogs: [] },
+    { id: "AG-004", model: "Premium", status: "maint_waiting", barcode: "20002", maintenanceLogs: [{ id: 2, date: "2024-05-20", notes: "Falla en puerto Jack 3.5mm", statusAtTime: "maint_repair" }] },
+  ],
+  visitors: [
+    { id: "V-101", name: "Carlos Perez", document: "12345678", email: "carlos@mail.com", country: "España", age: 34 }
+  ],
+  guides: [
+    { id: "G-01", name: "Elena Guía", license: "LIC-9988", phone: "555-0102", assignedVisitors: [], daysWorked: 12 }
+  ],
+  loans: [
+    { id: "L-501", entityId: "V-101", entityType: "visitor", equipmentId: "AG-002", timestamp: new Date().toISOString(), returned: false, barcodeUsed: "10002" }
+  ]
 };
 
-const themeStyles = `
-  @import url('https://fonts.googleapis.com/css2?family=Special+Elite&family=Courier+Prime&family=Inter:wght@400;700;900&display=swap');
-  
-  html, body, #root {
-    width: 100% !important;
-    height: 100% !important;
-    margin: 0;
-    padding: 0;
-    overflow: hidden;
+const StorageService = {
+  saveLocal(data) {
+    localStorage.setItem(APP_STORAGE_KEY, JSON.stringify(data));
+  },
+  loadLocal() {
+    const saved = localStorage.getItem(APP_STORAGE_KEY);
+    return saved ? JSON.parse(saved) : INITIAL_DATA;
+  },
+  async syncToCloud(data) {
+    return new Promise((resolve, reject) => {
+      setTimeout(() => {
+        if (Math.random() > 0.85) reject("Error de Red");
+        else resolve(new Date().toISOString());
+      }, 1200);
+    });
   }
+};
 
-  .theme-journal { 
-    font-family: 'Special Elite', cursive; 
-    background-color: #f4e4bc; 
-    background-image: url('https://www.transparenttextures.com/patterns/old-map.png'); 
-    color: #2c1e11; 
-    box-shadow: inset 0 0 100px rgba(0,0,0,0.1); 
-  }
-  
-  .theme-tv { 
-    background-color: #0a0a0a; 
-    color: #10b981; 
-    text-shadow: 0 0 8px rgba(16, 185, 129, 0.6); 
-    font-family: 'Courier Prime', monospace; 
-  }
+// --- COMPONENTES AUXILIARES ---
 
-  .scanlines { position: absolute; inset: 0; pointer-events: none; z-index: 10; background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%); background-size: 100% 4px; }
-  @keyframes flicker { 0% { opacity: 0.1; } 100% { opacity: 0.12; } }
-  .flicker { animation: flicker 0.1s infinite; position: absolute; inset: 0; pointer-events: none; z-index: 11; background: white; opacity: 0.03; }
-  
-  .custom-scroll::-webkit-scrollbar { width: 6px; }
-  .custom-scroll::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.2); border-radius: 10px; }
-`;
+const Modal = ({ title, children, onClose }) => (
+  <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md flex items-center justify-center z-[100] p-4">
+    <div className="bg-white rounded-[3rem] w-full max-w-3xl shadow-2xl overflow-hidden animate-in zoom-in duration-300 border border-white/20">
+      <div className="p-8 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+        <h3 className="font-black text-slate-800 uppercase tracking-tight text-xl">{title}</h3>
+        <button onClick={onClose} className="p-3 hover:bg-slate-200 rounded-full transition-all text-slate-400"><X size={24}/></button>
+      </div>
+      <div className="p-8 max-h-[80vh] overflow-y-auto custom-scrollbar">{children}</div>
+    </div>
+  </div>
+);
+
+// --- APP PRINCIPAL ---
 
 export default function App() {
-  const [config, setConfig] = useState<Config>(INITIAL_DATA);
-  const [currentPageId, setCurrentPageId] = useState("");
-  const [history, setHistory] = useState<string[]>([]);
-  const [isDev, setIsDev] = useState(false);
-  const [showLogin, setShowLogin] = useState(false);
-  const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState('pages');
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editingSubBlock, setEditingSubBlock] = useState(false); 
-  const [blockEditTab, setBlockEditTab] = useState<'content' | 'style'>('content'); 
-  const [password, setPassword] = useState("");
-  const [devClicks, setDevClicks] = useState(0);
-  const [devMsg, setDevMsg] = useState("");
-  const [isMobileEnv, setIsMobileEnv] = useState(false);
-  const [rawJson, setRawJson] = useState("");
-  const [jsonError, setJsonError] = useState<string | null>(null);
-  const [isExternalLinkMode, setIsExternalLinkMode] = useState(false);
-  const [globalCursor, setGlobalCursor] = useState<string | null>(null);
+  const [userRole, setUserRole] = useState(null);
+  const [data, setData] = useState(INITIAL_DATA);
+  const [view, setView] = useState('status');
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [notif, setNotif] = useState(null);
+  const [modal, setModal] = useState(null);
+  const [printData, setPrintData] = useState(null);
 
   useEffect(() => {
-    const checkEnv = () => setIsMobileEnv(window.innerWidth < 768);
-    checkEnv();
-    window.addEventListener('resize', checkEnv);
-    
-    const loadData = async () => {
-      const saved = localStorage.getItem('enigma_v16_styles');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        setConfig(parsed);
-        setCurrentPageId(parsed.homePageId);
-        setRawJson(JSON.stringify(parsed, null, 2));
-      } else {
-        try {
-          const response = await fetch('/config.json');
-          if (response.ok) {
-            const data = await response.json();
-            setConfig(data);
-            setCurrentPageId(data.homePageId);
-            setRawJson(JSON.stringify(data, null, 2));
-          }
-        } catch (e) {
-          setConfig(INITIAL_DATA);
-          setCurrentPageId(INITIAL_DATA.homePageId);
-          setRawJson(JSON.stringify(INITIAL_DATA, null, 2));
-        }
-      }
-    };
-    loadData();
-
-    const style = document.createElement('style');
-    style.textContent = themeStyles;
-    document.head.append(style);
-    return () => {
-      style.remove();
-      window.removeEventListener('resize', checkEnv);
-    };
+    setData(StorageService.loadLocal());
   }, []);
 
-  useEffect(() => {
-    if (config !== INITIAL_DATA) {
-      localStorage.setItem('enigma_v16_styles', JSON.stringify(config));
-    }
-  }, [config]);
-
-  const handleLogin = () => {
-    if (password === "Daniela") {
-      setIsDev(true); setShowLogin(false); setSidebarOpen(true); setPassword("");
-    } else alert("Clave incorrecta");
+  const updateData = (newData) => {
+    setData(newData);
+    StorageService.saveLocal(newData);
+    handleManualSync(newData);
   };
 
-  const applyRawJson = () => {
+  const handleManualSync = async (currentData = data) => {
+    setIsSyncing(true);
     try {
-      const parsed = JSON.parse(rawJson);
-      if (!parsed.pages || !parsed.homePageId) throw new Error("Estructura inválida");
-      setConfig(parsed);
-      setCurrentPageId(parsed.homePageId);
-      setJsonError(null);
-      alert("Configuración aplicada");
-    } catch (e: any) { setJsonError(e.message); }
-  };
-
-  const navigateTo = (id: string) => {
-    if (!id) return;
-    if (id.startsWith('http')) {
-      window.open(id, '_blank');
-      return;
+      const syncTime = await StorageService.syncToCloud(currentData);
+      const updated = { ...currentData, syncMetadata: { lastSync: syncTime, status: 'synced' } };
+      setData(updated);
+      StorageService.saveLocal(updated);
+      triggerNotif("Sincronizado con la Nube");
+    } catch (err) {
+      const updated = { ...currentData, syncMetadata: { ...currentData.syncMetadata, status: 'error' } };
+      setData(updated);
+      StorageService.saveLocal(updated);
+      triggerNotif("Error de Red: Trabajando en Local");
+    } finally {
+      setIsSyncing(false);
     }
-    setHistory(prev => [...prev, currentPageId]);
-    setCurrentPageId(id);
-    window.scrollTo(0,0);
   };
 
-  const goBack = () => {
-    if (history.length === 0) return;
-    const lastPage = history[history.length - 1];
-    setHistory(prev => prev.slice(0, -1));
-    setCurrentPageId(lastPage);
-    window.scrollTo(0,0);
+  const triggerNotif = (msg) => {
+    setNotif(msg);
+    setTimeout(() => setNotif(null), 4000);
   };
 
-  const handleDragStart = (e: React.DragEvent, id: string, type: 'page' | 'block') => {
-    e.dataTransfer.setData('id', id);
-    e.dataTransfer.setData('type', type);
-  };
+  // --- LOGICA CRUD ---
 
-  const handleDrop = (e: React.DragEvent, targetId: string, type: 'page' | 'block') => {
-    const draggedId = e.dataTransfer.getData('id');
-    const draggedType = e.dataTransfer.getData('type');
-    if (draggedType !== type || draggedId === targetId) return;
+  const handleEntityCRUD = (e, type, id = null) => {
+    e.preventDefault();
+    const formData = new FormData(e.target);
+    const obj = { id: id || `${type.charAt(0).toUpperCase()}-${Date.now()}` };
+    formData.forEach((value, key) => { obj[key] = value; });
 
-    if (type === 'page') {
-      const newOrder = [...config.pageOrder];
-      const fromIdx = newOrder.indexOf(draggedId);
-      const toIdx = newOrder.indexOf(targetId);
-      newOrder.splice(fromIdx, 1);
-      newOrder.splice(toIdx, 0, draggedId);
-      setConfig({ ...config, pageOrder: newOrder });
+    let newCollection;
+    if (id) {
+      newCollection = data[type].map(v => v.id === id ? { ...v, ...obj } : v);
     } else {
-      const pg = config.pages[currentPageId];
-      const blocks = [...pg.blocks];
-      const fromIdx = blocks.findIndex(b => b.id === draggedId);
-      const toIdx = blocks.findIndex(b => b.id === targetId);
-      const [draggedBlock] = blocks.splice(fromIdx, 1);
-      blocks.splice(toIdx, 0, draggedBlock);
-      setConfig({ ...config, pages: { ...config.pages, [currentPageId]: { ...pg, blocks } } });
-    }
-  };
-
-  const addBlock = () => {
-    const id = 'b' + Date.now();
-    const pg = config.pages[currentPageId];
-    if (!pg) return;
-    const newBlock: Block = { 
-      id, type: 'text', content: 'Nuevo misterio...', 
-      position: 'relative', actionType: 'none', actionResult: 'discover', clueLink: '', 
-      options: { scale: 100 }, extraStyles: {}
-    };
-    setConfig(prev => ({...prev, pages: {...prev.pages, [currentPageId]: {...pg, blocks: [...pg.blocks, newBlock]}}}));
-    setEditingId(id); setActiveTab('blocks');
-  };
-
-  const updateCurrentBlock = (upd: Partial<Block>) => {
-    const pg = config.pages[currentPageId];
-    const blocks = pg.blocks.map(b => b.id === editingId ? { ...b, ...upd } : b);
-    setConfig({ ...config, pages: { ...config.pages, [currentPageId]: { ...pg, blocks } } });
-  };
-
-  const updateSubBlock = (upd: Partial<Block>) => {
-    const pg = config.pages[currentPageId];
-    const blocks = pg.blocks.map(b => {
-      if (b.id === editingId) {
-        return { ...b, subBlock: { ...(b.subBlock as Block), ...upd } };
+      if (type === 'inventory') {
+        obj.status = 'available';
+        obj.maintenanceLogs = [];
       }
-      return b;
-    });
-    setConfig({ ...config, pages: { ...config.pages, [currentPageId]: { ...pg, blocks } } });
-  };
-
-  const updateBlockStyles = (styles: any) => {
-    if (editingSubBlock) {
-      const pg = config.pages[currentPageId];
-      const blocks = pg.blocks.map(b => {
-        if (b.id === editingId) {
-          return { ...b, subBlock: { ...(b.subBlock as Block), extraStyles: { ...(b.subBlock?.extraStyles || {}), ...styles } } };
-        }
-        return b;
-      });
-      setConfig({ ...config, pages: { ...config.pages, [currentPageId]: { ...pg, blocks } } });
-    } else {
-      const pg = config.pages[currentPageId];
-      const blocks = pg.blocks.map(b => b.id === editingId ? { ...b, extraStyles: { ...(b.extraStyles || {}), ...styles } } : b);
-      setConfig({ ...config, pages: { ...config.pages, [currentPageId]: { ...pg, blocks } } });
+      newCollection = [...data[type], obj];
     }
+
+    updateData({ ...data, [type]: newCollection });
+    setModal(null);
+    triggerNotif("Registro procesado correctamente");
   };
 
-  const currentPage = config.pages[currentPageId] || config.pages[config.homePageId];
+  const handleDelete = (type, id) => {
+    if (!window.confirm("¿Confirmas la eliminación definitiva?")) return;
+    updateData({ ...data, [type]: data[type].filter(item => item.id !== id) });
+    triggerNotif("Eliminado correctamente");
+  };
 
-  return (
-    <div 
-      className={`flex h-screen w-full transition-colors duration-500 overflow-hidden ${isDev ? 'bg-zinc-900' : 'bg-white'}`}
-      style={globalCursor ? { cursor: `url(${globalCursor}), auto` } : {}}
-    >
-      {/* MODAL DE LOGIN */}
-      {showLogin && (
-        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/90 backdrop-blur-md p-6 text-white text-xs">
-          <div className="bg-zinc-900 border border-zinc-800 p-10 rounded-[3rem] w-full max-w-sm shadow-2xl text-center">
-            <Lock className="mx-auto text-blue-500 mb-6" size={56} />
-            <input type="password" autoFocus value={password} onChange={e => setPassword(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleLogin()} className="w-full bg-zinc-800 border border-zinc-700 p-5 rounded-2xl text-white text-center text-3xl mb-6 outline-none" placeholder="••••" />
-            <button onClick={handleLogin} className="w-full bg-blue-600 p-5 rounded-2xl text-white font-black uppercase tracking-widest shadow-lg hover:bg-blue-500">ENTRAR</button>
-            <button onClick={() => setShowLogin(false)} className="mt-6 text-zinc-500 text-sm">Cancelar</button>
+  // --- LOGICA OPERATIVA ---
+
+  const handleAssignLoan = (e, entity, entityType) => {
+    e.preventDefault();
+    const barcode = new FormData(e.target).get('barcode');
+    const equipment = data.inventory.find(i => i.barcode === barcode);
+
+    if (!equipment) return triggerNotif("Error: El código no existe");
+    if (equipment.status !== 'available') return triggerNotif("Equipo no disponible");
+
+    const newInventory = data.inventory.map(item => 
+      item.id === equipment.id ? { ...item, status: 'in_use', visitorId: entity.id } : item
+    );
+    const newLoan = {
+      id: `L-${Date.now()}`,
+      entityId: entity.id,
+      entityType,
+      equipmentId: equipment.id,
+      barcodeUsed: barcode,
+      timestamp: new Date().toISOString(),
+      returned: false
+    };
+
+    updateData({ ...data, inventory: newInventory, loans: [...data.loans, newLoan] });
+    setModal(null);
+    setPrintData({ type: 'loan', entity, equipment, timestamp: newLoan.timestamp });
+  };
+
+  const handleReceive = (equipmentId) => {
+    const equipment = data.inventory.find(i => i.id === equipmentId);
+    const newInventory = data.inventory.map(item => 
+      item.id === equipmentId ? { ...item, status: 'available', visitorId: null } : item
+    );
+    const newLoans = data.loans.map(loan => 
+      (loan.equipmentId === equipmentId && !loan.returned) ? { ...loan, returned: true } : loan
+    );
+    updateData({ ...data, inventory: newInventory, loans: newLoans });
+    setPrintData({ type: 'return', equipment, timestamp: new Date().toISOString() });
+    triggerNotif("Retorno registrado");
+  };
+
+  const handleImportBackup = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const imported = JSON.parse(event.target.result);
+        updateData(imported);
+        triggerNotif("Base de datos restaurada");
+      } catch {
+        triggerNotif("Error en archivo");
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  // --- RENDERIZADO ---
+
+  if (printData) {
+    return (
+      <div className="min-h-screen bg-white p-12 flex flex-col items-center animate-in fade-in duration-500">
+        <div className="w-full max-w-sm border-8 border-double border-slate-200 p-10 rounded-3xl text-center font-mono shadow-2xl">
+          <img src={data.settings.logo} alt="Logo" className="h-24 mx-auto mb-6" />
+          <h2 className="text-2xl font-black uppercase tracking-tighter text-slate-900">{data.settings.appName}</h2>
+          <div className="my-8 border-y-4 border-slate-50 py-8 text-left text-sm space-y-3">
+            <p className="flex justify-between"><strong>TICKET:</strong> <span className="font-black text-indigo-600">#{Date.now().toString().slice(-6)}</span></p>
+            <p className="flex justify-between"><strong>OPERACIÓN:</strong> <span className="font-black">{printData.type === 'loan' ? 'ENTREGA' : 'DEVOLUCIÓN'}</span></p>
+            <p className="flex justify-between"><strong>EQUIPO:</strong> <span>{printData.equipment.id}</span></p>
+            {printData.entity && <p className="flex justify-between"><strong>TITULAR:</strong> <span className="uppercase">{printData.entity.name}</span></p>}
+            <p className="flex justify-between"><strong>FECHA:</strong> <span className="text-[10px]">{new Date(printData.timestamp).toLocaleString()}</span></p>
           </div>
+          <p className="text-[10px] text-slate-400 text-left mb-10 italic leading-relaxed">{data.settings.terms}</p>
+          <div className="h-28 border-2 border-slate-50 rounded-2xl flex items-center justify-center text-slate-200 uppercase font-black tracking-widest text-xs">Firma Autorizada</div>
         </div>
-      )}
+        <div className="mt-12 flex gap-6 no-print">
+          <button onClick={() => window.print()} className="bg-slate-900 text-white px-10 py-4 rounded-[2rem] font-black flex items-center gap-3 hover:scale-105 transition-all shadow-2xl shadow-slate-200"><Printer size={24}/> Imprimir</button>
+          <button onClick={() => setPrintData(null)} className="bg-slate-100 text-slate-500 px-10 py-4 rounded-[2rem] font-black hover:bg-slate-200 transition-all">Regresar</button>
+        </div>
+      </div>
+    );
+  }
 
-      {/* PANEL DE EDITOR */}
-      {isDev && (
-        <aside className={`h-full bg-zinc-950 border-r border-zinc-800 flex flex-col z-[100] transition-all duration-300 ${sidebarOpen ? 'w-[95vw] md:w-[500px]' : 'w-0 overflow-hidden'}`}>
-          <div className="p-4 border-b border-zinc-900 flex justify-between items-center shrink-0">
-            <span className="text-xs font-black uppercase text-white tracking-widest flex items-center gap-2"><Sparkles size={16} className="text-blue-400" /> CMS ENGINE PRO</span>
-            <button onClick={() => setSidebarOpen(false)} className="text-zinc-500 hover:text-white"><X size={20}/></button>
-          </div>
-
-          <div className="flex border-b border-zinc-900 shrink-0 overflow-x-auto hide-scrollbar">
-            {[
-              { id: 'pages', icon: Home, label: 'Páginas' },
-              { id: 'design', icon: Palette, label: 'Diseño' },
-              { id: 'tree', icon: GitBranch, label: 'Árbol' },
-              { id: 'blocks', icon: Layers, label: 'Bloques' },
-              { id: 'json', icon: FileCode, label: 'JSON' }
-            ].map(tab => (
-              <button key={tab.id} onClick={() => { setActiveTab(tab.id); if (tab.id === 'json') setRawJson(JSON.stringify(config, null, 2)); }}
-                className={`flex-1 py-4 px-2 flex flex-col items-center gap-1 transition-all ${activeTab === tab.id ? 'text-blue-400 bg-blue-400/5' : 'text-zinc-600'}`}
-              >
-                <tab.icon size={16} />
-                <span className="text-[9px] font-black uppercase tracking-tighter whitespace-nowrap">{tab.label}</span>
-              </button>
-            ))}
-          </div>
-
-          <div className="flex-1 overflow-y-auto p-4 space-y-6 custom-scroll text-white text-xs">
-            {activeTab === 'json' && (
-              <div className="h-full flex flex-col space-y-4 animate-in fade-in">
-                <textarea value={rawJson} onChange={(e) => setRawJson(e.target.value)} spellCheck={false} className="w-full h-[65vh] bg-zinc-900 text-emerald-500 font-mono text-[11px] p-4 rounded-xl border border-zinc-800 outline-none focus:border-blue-500 resize-none custom-scroll" />
-                <button onClick={applyRawJson} className="w-full p-3 rounded-xl bg-blue-600 text-white text-[10px] font-black uppercase flex items-center justify-center gap-2 shadow-lg"><Check size={14} /> Aplicar Cambios</button>
-              </div>
-            )}
-
-            {activeTab === 'pages' && (
-              <div className="space-y-4 animate-in fade-in">
-                <div className="flex justify-between items-center text-white"><h4 className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Navegación</h4><button onClick={() => {const id='pg'+Date.now(); setConfig(prev=>({...prev, pages:{...prev.pages, [id]:{id, title:'Nueva', theme:'default', publishDate:new Date().toISOString(), blocks:[], layoutWidth: "100%"}}, pageOrder:[...prev.pageOrder, id]})); setCurrentPageId(id);}} className="text-blue-500"><Plus size={18}/></button></div>
-                <div className="space-y-2">
-                  {config.pageOrder.map((pid) => (
-                    <div key={pid} draggable onDragStart={(e) => handleDragStart(e, pid, 'page')} onDragOver={(e) => e.preventDefault()} onDrop={(e) => handleDrop(e, pid, 'page')}
-                      className={`p-3 rounded-2xl border flex items-center gap-3 cursor-grab transition-all ${currentPageId === pid ? 'bg-blue-600 border-blue-500 text-white shadow-md' : 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:border-zinc-700'}`}
-                    >
-                      <GripVertical size={14} className="opacity-40" />
-                      <span onClick={() => setCurrentPageId(pid)} className="flex-1 text-xs font-bold uppercase truncate">{config.pages[pid]?.title || pid}</span>
-                      <button onClick={() => {if(config.pageOrder.length > 1){ const {[pid]:_, ...rest} = config.pages; setConfig(p=>({...p, pages:rest, pageOrder:p.pageOrder.filter(id=>id!==pid)})); setCurrentPageId(config.pageOrder[0]); }}}><Trash2 size={14}/></button>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {activeTab === 'tree' && (
-              <div className="space-y-4 animate-in fade-in">
-                <h4 className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Estructura: {currentPage.title}</h4>
-                <div className="space-y-3 pl-2 border-l border-zinc-800">
-                  {currentPage.blocks.map((b) => (
-                    <div key={b.id} className="space-y-2">
-                       <div onClick={() => { setEditingId(b.id); setEditingSubBlock(false); setActiveTab('blocks'); }} className={`flex items-center gap-2 p-2 rounded-lg cursor-pointer hover:bg-zinc-900 transition-colors ${editingId === b.id && !editingSubBlock ? 'bg-zinc-800 text-blue-400 border border-blue-900/30' : 'text-zinc-400'}`}>
-                          <Layers size={14}/>
-                          <span className="font-mono text-[10px]">{b.type} <span className="opacity-30">#{b.id.slice(-4)}</span></span>
-                       </div>
-                       {b.subBlock && (
-                         <div onClick={() => { setEditingId(b.id); setEditingSubBlock(true); setActiveTab('blocks'); }} className={`flex items-center gap-2 p-2 ml-4 rounded-lg cursor-pointer hover:bg-zinc-900 transition-colors border-l-2 border-zinc-800 ${editingId === b.id && editingSubBlock ? 'bg-zinc-800 text-amber-400 border border-amber-900/30' : 'text-zinc-500'}`}>
-                            <GitBranch size={12}/>
-                            <span className="font-mono text-[9px]">HIJO: {b.subBlock.type}</span>
-                         </div>
-                       )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {activeTab === 'blocks' && (
-              <div className="space-y-4 pb-20 animate-in fade-in">
-                <div className="flex justify-between items-center mb-2 text-zinc-500"><h4 className="text-[10px] font-black uppercase tracking-widest">Componentes</h4><button onClick={addBlock} className="bg-blue-600 text-white p-1 rounded-lg shadow-lg"><Plus size={18}/></button></div>
-                {currentPage?.blocks.map((b: Block, idx: number) => {
-                  const isCurrent = editingId === b.id;
-                  const blockToEdit = (isCurrent && editingSubBlock && b.subBlock) ? b.subBlock : b;
-                  
-                  return (
-                    <div key={b.id} draggable onDragStart={(e) => handleDragStart(e, b.id, 'block')} onDragOver={(e) => e.preventDefault()} onDrop={(e) => handleDrop(e, b.id, 'block')} className={`bg-zinc-900 border rounded-2xl overflow-hidden transition-all cursor-grab ${isCurrent ? 'border-blue-500 shadow-xl' : 'border-slate-800'}`}>
-                      <div className="p-3 flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                           <GripVertical size={12} className="opacity-30" />
-                           <span onClick={() => { setEditingId(b.id); setEditingSubBlock(false); }} className="text-[9px] font-black uppercase text-zinc-500 truncate max-w-[150px]">{b.type}: {b.content.substring(0,10)}...</span>
-                        </div>
-                        <Settings onClick={() => { setEditingId(b.id); setEditingSubBlock(false); }} size={12} className="text-zinc-600 cursor-pointer hover:text-white" />
-                      </div>
-                      
-                      {isCurrent && (
-                        <div className="p-0 bg-zinc-950 border-t border-zinc-800">
-                           <div className="flex border-b border-zinc-800 bg-zinc-900">
-                             <button onClick={() => setBlockEditTab('content')} className={`flex-1 p-3 flex items-center justify-center gap-2 font-black uppercase text-[8px] transition-all ${blockEditTab === 'content' ? 'text-blue-400 bg-zinc-950 border-b border-blue-400' : 'text-zinc-600'}`}><FileCode size={12}/> Contenido</button>
-                             <button onClick={() => setBlockEditTab('style')} className={`flex-1 p-3 flex items-center justify-center gap-2 font-black uppercase text-[8px] transition-all ${blockEditTab === 'style' ? 'text-amber-400 bg-zinc-950 border-b border-amber-400' : 'text-zinc-600'}`}><Paintbrush size={12}/> Estilo</button>
-                           </div>
-
-                           <div className="p-4 space-y-4">
-                             {blockEditTab === 'content' ? (
-                               <div className="space-y-4 animate-in fade-in">
-                                 {editingSubBlock && (
-                                   <div className="bg-amber-500/10 border border-amber-500/30 p-2 rounded-xl flex justify-between items-center mb-2">
-                                      <span className="text-[8px] font-black uppercase text-amber-500 flex items-center gap-1"><GitBranch size={10}/> Editando Hijo</span>
-                                      <button onClick={() => setEditingSubBlock(false)} className="text-[8px] font-black bg-amber-500 text-black px-2 py-0.5 rounded">Padre</button>
-                                   </div>
-                                 )}
-
-                                 <div className="grid grid-cols-2 gap-2">
-                                   <div>
-                                      <label className="text-[8px] uppercase text-zinc-600 font-black mb-1 block">Tipo</label>
-                                      <select value={blockToEdit.type} onChange={e => { if (editingSubBlock) updateSubBlock({ type: e.target.value }); else updateCurrentBlock({ type: e.target.value }); }} className="w-full bg-zinc-900 border border-zinc-800 p-2 rounded text-[10px]">
-                                        <option value="text">Texto</option><option value="image">Imagen</option><option value="video">Video</option><option value="html">HTML</option>
-                                      </select>
-                                   </div>
-                                   <div>
-                                      <label className="text-[8px] uppercase text-zinc-600 font-black mb-1 block">Ubicación</label>
-                                      <select value={blockToEdit.position} onChange={e => { if (editingSubBlock) updateSubBlock({ position: e.target.value as any }); else updateCurrentBlock({ position: e.target.value as any }); }} className="w-full bg-zinc-900 border border-zinc-800 p-2 rounded text-[10px]">
-                                        <option value="relative">Normal</option><option value="fixed">Fijo</option>
-                                      </select>
-                                   </div>
-                                 </div>
-
-                                 {blockToEdit.position === 'fixed' && (
-                                   <div className="grid grid-cols-2 gap-2 bg-blue-500/5 p-2 rounded border border-blue-500/20 text-[10px]">
-                                     <input placeholder="Top (20px)" value={blockToEdit.posProps?.top || ""} onChange={e => { const p = {...(blockToEdit.posProps||{}), top: e.target.value}; if (editingSubBlock) updateSubBlock({ posProps: p }); else updateCurrentBlock({ posProps: p }); }} className="bg-zinc-900 p-1 rounded" />
-                                     <input placeholder="Left (50%)" value={blockToEdit.posProps?.left || ""} onChange={e => { const p = {...(blockToEdit.posProps||{}), left: e.target.value}; if (editingSubBlock) updateSubBlock({ posProps: p }); else updateCurrentBlock({ posProps: p }); }} className="bg-zinc-900 p-1 rounded" />
-                                   </div>
-                                 )}
-
-                                 <div className="p-3 bg-zinc-900/50 rounded-xl border border-zinc-800 space-y-3 text-[10px]">
-                                    <label className="text-[8px] uppercase text-blue-400 font-black block">Lógica e Interacción</label>
-                                    <div className="grid grid-cols-2 gap-2">
-                                       <select value={blockToEdit.actionType} onChange={e => { if (editingSubBlock) updateSubBlock({ actionType: e.target.value }); else updateCurrentBlock({ actionType: e.target.value }); }} className="w-full bg-zinc-900 border border-zinc-800 p-2 rounded">
-                                          <option value="none">Sin Acción</option><option value="hover">Hover</option><option value="long-hover">Long Hover</option><option value="click">Click</option><option value="double-click">Doble Click</option><option value="triple-click">3 Clicks</option><option value="input-match">Clave Secreta</option>
-                                       </select>
-                                       <select value={blockToEdit.actionResult} onChange={e => {
-                                          const val = e.target.value; const upd: Partial<Block> = { actionResult: val };
-                                          if ((val === 'appear' || val === 'replace') && !blockToEdit.subBlock) {
-                                            upd.subBlock = { id: 'child-' + Date.now(), type: 'text', content: 'Contenido...', position: 'relative', actionType: 'none', actionResult: 'discover', clueLink: '', options: { scale: 100 }, extraStyles: {} };
-                                          }
-                                          if (editingSubBlock) updateSubBlock(upd); else updateCurrentBlock(upd);
-                                       }} className="w-full bg-zinc-900 border border-zinc-800 p-2 rounded">
-                                          <option value="discover">Botón Descubrir</option><option value="navigate">Nav Directa</option><option value="cursor">Cambiar Cursor</option><option value="audio">Audio</option><option value="appear">Aparecer Hijo</option><option value="replace">Reemplazar</option>
-                                       </select>
-                                    </div>
-
-                                    {blockToEdit.actionType === 'input-match' && (
-                                      <input placeholder="Clave secreta..." value={blockToEdit.triggerValue || ""} onChange={e => { if (editingSubBlock) updateSubBlock({ triggerValue: e.target.value }); else updateCurrentBlock({ triggerValue: e.target.value }); }} className="w-full bg-zinc-900 border border-zinc-800 p-2 rounded" />
-                                    )}
-
-                                    {blockToEdit.actionResult === 'audio' && (
-                                      <input placeholder="URL del Audio (mp3)..." value={blockToEdit.audioUrl || ""} onChange={e => { if (editingSubBlock) updateSubBlock({ audioUrl: e.target.value }); else updateCurrentBlock({ audioUrl: e.target.value }); }} className="w-full bg-zinc-900 border border-zinc-800 p-2 rounded text-amber-500" />
-                                    )}
-
-                                    {blockToEdit.actionResult === 'cursor' && (
-                                      <input placeholder="URL imagen cursor..." value={blockToEdit.mouseIcon || ""} onChange={e => { if (editingSubBlock) updateSubBlock({ mouseIcon: e.target.value }); else updateCurrentBlock({ mouseIcon: e.target.value }); }} className="w-full bg-zinc-900 border border-zinc-800 p-2 rounded" />
-                                    )}
-
-                                    {(blockToEdit.actionResult === 'appear' || blockToEdit.actionResult === 'replace') && (
-                                      <button onClick={() => setEditingSubBlock(true)} className="w-full p-2 bg-amber-600 text-black text-[8px] font-black uppercase rounded-lg hover:bg-amber-500 flex items-center justify-center gap-2 shadow-lg"><Edit3 size={10}/> Configurar Hijo</button>
-                                    )}
-
-                                    {(blockToEdit.actionResult === 'discover' || blockToEdit.actionResult === 'navigate') && (
-                                      <div className="space-y-2">
-                                        <div className="flex justify-between items-center bg-zinc-900 p-1 rounded border border-zinc-800">
-                                           <button onClick={() => setIsExternalLinkMode(false)} className={`flex-1 py-1 text-[7px] font-black rounded uppercase transition-all ${!isExternalLinkMode ? 'bg-blue-600 text-white' : 'text-zinc-500'}`}>Interno</button>
-                                           <button onClick={() => setIsExternalLinkMode(true)} className={`flex-1 py-1 text-[7px] font-black rounded uppercase transition-all ${isExternalLinkMode ? 'bg-blue-600 text-white' : 'text-zinc-500'}`}>Externo</button>
-                                        </div>
-                                        {isExternalLinkMode ? (
-                                          <input placeholder="https://..." value={blockToEdit.clueLink} onChange={e => { if(editingSubBlock) updateSubBlock({clueLink: e.target.value}); else updateCurrentBlock({clueLink: e.target.value}); }} className="w-full bg-zinc-900 border border-zinc-800 p-2 rounded text-blue-400 font-bold" />
-                                        ) : (
-                                          <select value={blockToEdit.clueLink} onChange={e => { if(editingSubBlock) updateSubBlock({clueLink: e.target.value}); else updateCurrentBlock({clueLink: e.target.value}); }} className="w-full bg-zinc-900 border border-zinc-800 p-2 rounded text-blue-400 font-bold">
-                                            <option value="">Destino...</option>
-                                            {config.pageOrder.map(pid => <option key={pid} value={pid}>{config.pages[pid]?.title || pid}</option>)}
-                                          </select>
-                                        )}
-                                      </div>
-                                    )}
-                                 </div>
-                                 <textarea value={blockToEdit.content} onChange={e => { if(editingSubBlock) updateSubBlock({content: e.target.value}); else updateCurrentBlock({content: e.target.value}); }} className="w-full bg-zinc-900 border border-zinc-800 p-2 rounded text-[10px] text-white min-h-[80px] outline-none" placeholder="Escribe el contenido aquí..." />
-                               </div>
-                             ) : (
-                               <div className="space-y-4 animate-in fade-in text-[10px]">
-                                  <h4 className="text-[8px] uppercase text-amber-500 font-black mb-2 flex items-center gap-2"><Paintbrush size={10}/> Editor de Estilo Visual</h4>
-                                  
-                                  <div className="grid grid-cols-2 gap-4">
-                                     <div className="space-y-1">
-                                        <label className="text-zinc-600 block">Ancho (Width)</label>
-                                        <input value={blockToEdit.extraStyles?.width || ""} onChange={e => updateBlockStyles({ width: e.target.value })} placeholder="Ej: 100% o 300px" className="w-full bg-zinc-900 border border-zinc-800 p-2 rounded text-white" />
-                                     </div>
-                                     <div className="space-y-1">
-                                        <label className="text-zinc-600 block">Ancho Máximo</label>
-                                        <input value={blockToEdit.extraStyles?.maxWidth || ""} onChange={e => updateBlockStyles({ maxWidth: e.target.value })} placeholder="Ej: 800px" className="w-full bg-zinc-900 border border-zinc-800 p-2 rounded text-white" />
-                                     </div>
-                                     <div className="space-y-1">
-                                        <label className="text-zinc-600 block">Padding (Relleno)</label>
-                                        <input value={blockToEdit.extraStyles?.padding || ""} onChange={e => updateBlockStyles({ padding: e.target.value })} placeholder="Ej: 20px" className="w-full bg-zinc-900 border border-zinc-800 p-2 rounded text-white" />
-                                     </div>
-                                     <div className="space-y-1">
-                                        <label className="text-zinc-600 block">Margin (Margen)</label>
-                                        <input value={blockToEdit.extraStyles?.margin || ""} onChange={e => updateBlockStyles({ margin: e.target.value })} placeholder="Ej: 10px 0" className="w-full bg-zinc-900 border border-zinc-800 p-2 rounded text-white" />
-                                     </div>
-                                     <div className="space-y-1">
-                                        <label className="text-zinc-600 block">Borde (Border)</label>
-                                        <input value={blockToEdit.extraStyles?.border || ""} onChange={e => updateBlockStyles({ border: e.target.value })} placeholder="Ej: 2px solid red" className="w-full bg-zinc-900 border border-zinc-800 p-2 rounded text-white" />
-                                     </div>
-                                     <div className="space-y-1">
-                                        <label className="text-zinc-600 block">Radio Borde</label>
-                                        <input value={blockToEdit.extraStyles?.borderRadius || ""} onChange={e => updateBlockStyles({ borderRadius: e.target.value })} placeholder="Ej: 12px" className="w-full bg-zinc-900 border border-zinc-800 p-2 rounded text-white" />
-                                     </div>
-                                     <div className="space-y-1">
-                                        <label className="text-zinc-600 block">Fondo (BG Color)</label>
-                                        <input value={blockToEdit.extraStyles?.backgroundColor || ""} onChange={e => updateBlockStyles({ backgroundColor: e.target.value })} placeholder="Ej: #ff0000" className="w-full bg-zinc-900 border border-zinc-800 p-2 rounded text-white" />
-                                     </div>
-                                     <div className="space-y-1">
-                                        <label className="text-zinc-600 block">Color Texto</label>
-                                        <input value={blockToEdit.extraStyles?.color || ""} onChange={e => updateBlockStyles({ color: e.target.value })} placeholder="Ej: white" className="w-full bg-zinc-900 border border-zinc-800 p-2 rounded text-white" />
-                                     </div>
-                                  </div>
-
-                                  <div className="space-y-1 pt-2">
-                                     <label className="text-zinc-600 block">Sombra (Box Shadow)</label>
-                                     <input value={blockToEdit.extraStyles?.boxShadow || ""} onChange={e => updateBlockStyles({ boxShadow: e.target.value })} placeholder="Ej: 0 10px 30px rgba(0,0,0,0.5)" className="w-full bg-zinc-900 border border-zinc-800 p-2 rounded text-white" />
-                                  </div>
-
-                                  <button 
-                                    onClick={() => updateBlockStyles({ marginLeft: "auto", marginRight: "auto", display: "block" })}
-                                    className="w-full p-3 bg-zinc-900 border border-zinc-800 rounded-xl flex items-center justify-center gap-2 hover:bg-zinc-800 transition-all font-bold text-blue-400"
-                                  >
-                                    <AlignCenter size={14}/> Auto-Centrar Elemento
-                                  </button>
-                               </div>
-                             )}
-
-                             <button onClick={() => {
-                               const blocks = config.pages[currentPageId].blocks.filter(block => block.id !== b.id);
-                               setConfig({...config, pages: {...config.pages, [currentPageId]: {...currentPage, blocks}}});
-                               setEditingId(null);
-                             }} className="w-full p-2 bg-red-600/10 text-red-500 text-[8px] font-black uppercase rounded-lg border border-red-500/20">Borrar Nodo</button>
-                           </div>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-
-            {activeTab === 'design' && (
-              <div className="space-y-6 animate-in fade-in">
-                <div className="space-y-4">
-                  <div>
-                    <label className="text-[10px] font-black uppercase text-zinc-600 block mb-2">Nombre de Página</label>
-                    <input value={currentPage?.title || ""} onChange={e => setConfig({...config, pages: {...config.pages, [currentPageId]: {...currentPage, title: e.target.value}}})} className="w-full bg-zinc-900 border border-zinc-800 p-3 rounded-xl text-xs text-white outline-none focus:border-blue-500" />
-                  </div>
-                  <div>
-                    <label className="text-[10px] font-black uppercase text-zinc-600 block mb-2">Imagen de Fondo (URL)</label>
-                    <input placeholder="https://..." value={currentPage?.backgroundImage || ""} onChange={e => setConfig({...config, pages: {...config.pages, [currentPageId]: {...currentPage, backgroundImage: e.target.value}}})} className="w-full bg-zinc-900 border border-zinc-800 p-3 rounded-xl text-xs text-white outline-none focus:border-blue-500" />
-                  </div>
-                  <div>
-                    <label className="text-[10px] font-black uppercase text-zinc-600 block mb-2">Visibilidad</label>
-                    <div className="grid grid-cols-2 gap-2">
-                       <button onClick={() => setConfig({...config, pages: {...config.pages, [currentPageId]: {...currentPage, no_pc: !currentPage.no_pc}}})} className={`p-2 rounded-xl border text-[10px] font-bold ${!currentPage.no_pc ? 'bg-emerald-600 border-emerald-500' : 'bg-zinc-900 border-zinc-800 text-zinc-500'}`}>PC</button>
-                       <button onClick={() => setConfig({...config, pages: {...config.pages, [currentPageId]: {...currentPage, no_mobile: !currentPage.no_mobile}}})} className={`p-2 rounded-xl border text-[10px] font-bold ${!currentPage.no_mobile ? 'bg-emerald-600 border-emerald-500' : 'bg-zinc-900 border-zinc-800 text-zinc-500'}`}>MÓVIL</button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-        </aside>
-      )}
-
-      {/* ÁREA DE PREVISUALIZACIÓN */}
-      <main className="flex-1 flex flex-col overflow-hidden relative">
-        {isDev && (
-          <div className="h-16 bg-white border-b border-zinc-200 flex items-center justify-between px-6 shrink-0 z-50 shadow-sm transition-all duration-300">
-            <div className="flex items-center gap-4">
-               <button onClick={() => setSidebarOpen(!sidebarOpen)} className="p-2.5 bg-zinc-100 rounded-2xl text-zinc-900 hover:bg-zinc-200 transition-all">{sidebarOpen ? <X size={20}/> : <Menu size={20}/>}</button>
-               <div className="flex gap-2 items-center text-zinc-400">
-                  <Monitor size={14} className={!isMobileEnv ? 'text-blue-500' : ''} />
-                  <Smartphone size={14} className={isMobileEnv ? 'text-blue-500' : ''} />
-               </div>
+  if (!userRole) {
+    return (
+      <div className="min-h-screen bg-slate-900 flex items-center justify-center p-6 overflow-hidden">
+        <GlobalStyles />
+        <div className="absolute inset-0 opacity-20">
+           <div className="absolute top-0 -left-20 w-96 h-96 bg-indigo-500 rounded-full blur-[120px]" />
+           <div className="absolute bottom-0 -right-20 w-96 h-96 bg-emerald-500 rounded-full blur-[120px]" />
+        </div>
+        <div className="max-w-md w-full bg-white/10 backdrop-blur-xl rounded-[4rem] shadow-2xl p-14 border border-white/20 relative z-10">
+          <div className="flex justify-center mb-10">
+            <div className="p-8 bg-white rounded-[2.5rem] text-slate-900 shadow-2xl scale-110">
+              <Headphones size={56} strokeWidth={2.5} />
             </div>
-            <button onClick={() => setIsDev(false)} className="px-5 py-2 bg-zinc-950 text-white rounded-2xl text-[10px] font-black uppercase shadow-lg active:scale-95 transition-all"><EyeOff size={14} className="inline mr-2"/> Finalizar</button>
           </div>
-        )}
-
-        <div className={`flex-1 overflow-y-auto scroll-smooth transition-all duration-700 custom-scroll ${isDev ? 'p-6 md:p-12 bg-slate-100' : 'p-0 bg-white'}`}>
-          <div className={`mx-auto transition-all duration-700 min-h-full ${isDev ? 'bg-white shadow-2xl rounded-[3rem] border-[14px] border-zinc-900 max-w-[420px] md:max-w-7xl relative overflow-hidden' : 'w-full min-h-screen'}`}>
-             <PageRenderer 
-                page={currentPage} 
-                isDev={isDev} 
-                isMobileEnv={isMobileEnv}
-                history={history}
-                onNavigate={navigateTo} 
-                onBack={goBack}
-                onFooterClick={() => {
-                  const n = devClicks + 1; setDevClicks(n);
-                  if (n >= 5 && n < 10) setDevMsg(`Activando editor en ${10 - n}...`);
-                  if (n >= 10) { setShowLogin(true); setDevClicks(0); setDevMsg(""); }
-                  setTimeout(() => { setDevClicks(0); setDevMsg(""); }, 5000);
-                }} 
-                onSelectBlock={(id: string) => { setEditingId(id); setActiveTab('blocks'); setSidebarOpen(true); setBlockEditTab('content'); }} 
-                msg={devMsg} 
-                setGlobalCursor={setGlobalCursor}
-             />
+          <h1 className="text-4xl font-black text-center text-white mb-2 uppercase tracking-tighter">AudioPro</h1>
+          <p className="text-center text-indigo-300 font-bold mb-12 text-sm tracking-widest uppercase opacity-80">v4 • Taller & Control</p>
+          <div className="space-y-5">
+            <RoleButton onClick={() => setUserRole('admin')} icon={<Database/>} label="Administración" desc="Control total del sistema" color="hover:bg-white hover:text-slate-900 border-white/10 text-white" />
+            <RoleButton onClick={() => setUserRole('operator')} icon={<ArrowRightLeft/>} label="Operador" desc="Gestión de flujo diario" color="hover:bg-indigo-500 hover:text-white border-white/10 text-white" />
           </div>
         </div>
-      </main>
-    </div>
-  );
-}
-
-function PageRenderer({ page, isDev, onNavigate, onBack, history, onFooterClick, onSelectBlock, msg, isMobileEnv, setGlobalCursor }: any) {
-  const themes: any = {
-    default: "bg-white text-zinc-900",
-    journal: "theme-journal",
-    'retro-tv': "theme-tv"
-  };
-
-  const isHidden = !isDev && ((isMobileEnv && page?.no_mobile) || (!isMobileEnv && page?.no_pc));
-  if (isHidden) return <div className="p-20 text-center text-zinc-400 italic bg-white h-screen flex items-center justify-center font-sans">Contenido no disponible en este dispositivo.</div>;
-
-  const containerStyle = {
-    backgroundImage: page?.backgroundImage ? `url(${page.backgroundImage})` : 'none',
-    backgroundSize: 'cover', backgroundPosition: 'center', backgroundAttachment: 'fixed'
-  };
-
-  const contentWidthClass = (page?.layoutWidth === "80%" && !isMobileEnv) ? "max-w-[80%] mx-auto" : "max-w-full";
+      </div>
+    );
+  }
 
   return (
-    <div className={`${themes[page?.theme] || themes.default} w-full transition-all duration-1000 select-none relative min-h-screen flex flex-col items-center`} style={containerStyle}>
-      {page?.theme === 'retro-tv' && <><div className="scanlines"></div><div className="flicker"></div></>}
+    <div className="h-screen w-full bg-slate-50 flex overflow-hidden font-sans text-slate-800">
+      <GlobalStyles />
       
-      {!isDev && history.length > 0 && (
-        <button onClick={onBack} className="absolute top-6 left-6 z-[60] p-3 bg-white/10 backdrop-blur-md border border-current/20 rounded-full hover:bg-white/20 transition-all active:scale-90"><ArrowLeft size={20} /></button>
-      )}
+      {/* Sidebar - FIXED HEIGHT, NO SCROLL */}
+      <nav className="w-80 bg-slate-900 text-white flex flex-col shrink-0 h-screen overflow-hidden border-r border-slate-800">
+        <div className="p-10 flex items-center gap-4">
+          <div className="w-12 h-12 bg-white rounded-2xl flex items-center justify-center text-slate-900 shadow-xl">
+             <Headphones size={24}/>
+          </div>
+          <span className="font-black tracking-tighter text-2xl uppercase italic leading-none">{data.settings.appName}</span>
+        </div>
+        
+        <div className="flex-1 px-6 space-y-1 overflow-hidden">
+          <NavItem icon={<LayoutDashboard/>} label="Dashboard" active={view==='status'} onClick={() => setView('status')} />
+          <NavItem icon={<Headphones/>} label="Inventario" active={view==='inventory'} onClick={() => setView('inventory')} />
+          <NavItem icon={<Users/>} label="Visitantes" active={view==='visitors'} onClick={() => setView('visitors')} />
+          <NavItem icon={<Briefcase/>} label="Guías" active={view==='guides'} onClick={() => setView('guides')} />
+          
+          {userRole === 'admin' && (
+            <div className="pt-10 pb-4">
+              <p className="px-5 text-[10px] font-black text-slate-500 uppercase tracking-[0.3em] mb-4">Ajustes Admin</p>
+              <NavItem icon={<BarChart3/>} label="Estadísticas" active={view==='stats'} onClick={() => setView('stats')} />
+              <NavItem icon={<Settings/>} label="Configuración" active={view==='settings'} onClick={() => setView('settings')} />
+            </div>
+          )}
+        </div>
 
-      <div className={`${contentWidthClass} w-full space-y-20 py-16 md:py-32 px-8 md:px-24 pb-40 z-20 relative transition-all duration-500`}>
-        <header className="border-b-4 border-current pb-10 mb-20 animate-in slide-in-from-top duration-700">
-          <h1 className="text-5xl md:text-9xl font-black uppercase tracking-tighter leading-[0.8] drop-shadow-sm">{page?.title || "Sin Título"}</h1>
-          <div className="text-[10px] font-bold opacity-30 uppercase tracking-[0.5em] mt-4">ID: {page?.id || "N/A"}</div>
+        <div className="p-8 border-t border-white/5 space-y-6 shrink-0 bg-slate-900">
+          <div className="bg-white/5 p-5 rounded-3xl border border-white/10">
+             <div className="flex items-center justify-between mb-3">
+                <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Estado Nube</span>
+                <button onClick={() => handleManualSync()} disabled={isSyncing} className={`p-2 rounded-xl transition-all ${isSyncing ? 'animate-spin bg-white/10' : 'hover:bg-white text-slate-900 bg-indigo-500 text-white'}`}><RefreshCw size={14}/></button>
+             </div>
+             <div className="flex items-center gap-2">
+                <div className={`w-2.5 h-2.5 rounded-full ${data.syncMetadata.status === 'synced' ? 'bg-emerald-400' : 'bg-amber-400 animate-pulse'}`} />
+                <p className="text-[11px] font-bold text-slate-300">{data.syncMetadata.lastSync ? `Sinc: ${new Date(data.syncMetadata.lastSync).toLocaleTimeString()}` : 'Modo Offline'}</p>
+             </div>
+          </div>
+          <button onClick={() => setUserRole(null)} className="w-full flex items-center gap-3 p-5 rounded-3xl text-red-400 hover:bg-red-500/10 transition-all font-black text-sm uppercase tracking-[0.2em]"><LogOut size={20}/> Salir</button>
+        </div>
+      </nav>
+
+      {/* Main Content Area - SINGLE SCROLLBAR */}
+      <main className="flex-1 h-screen overflow-y-auto custom-scrollbar flex flex-col bg-slate-50/50">
+        
+        {/* Header - NOT FIXED, SCROLLS WITH CONTENT */}
+        <header className="h-28 bg-white/80 backdrop-blur-md border-b border-slate-100 px-12 flex items-center justify-between shrink-0">
+          <div>
+            <h2 className="text-[10px] font-black text-slate-300 uppercase tracking-[0.4em] mb-1">{userRole} PANEL</h2>
+            <h1 className="text-3xl font-black text-slate-900 uppercase tracking-tighter">{view}</h1>
+          </div>
+          <div className="flex gap-4">
+            {view === 'inventory' && userRole === 'admin' && (
+              <button onClick={() => setModal({ type: 'inventory_crud' })} className="flex items-center gap-2 bg-slate-900 text-white px-8 py-3.5 rounded-2xl text-xs font-black hover:scale-105 transition-all shadow-xl shadow-slate-200"><Plus size={18} /> Nuevo Equipo</button>
+            )}
+            {view === 'visitors' && (
+              <button onClick={() => setModal({ type: 'visitors_crud' })} className="flex items-center gap-2 bg-indigo-600 text-white px-8 py-3.5 rounded-2xl text-xs font-black hover:scale-105 transition-all shadow-xl shadow-indigo-100"><UserPlus size={18} /> Registrar</button>
+            )}
+            {view === 'guides' && userRole === 'admin' && (
+              <button onClick={() => setModal({ type: 'guides_crud' })} className="flex items-center gap-2 bg-amber-600 text-white px-8 py-3.5 rounded-2xl text-xs font-black hover:scale-105 transition-all shadow-xl shadow-amber-100"><Plus size={18} /> Nuevo Guía</button>
+            )}
+          </div>
         </header>
 
-        <div className="space-y-24">
-          {page?.blocks.map((b: Block) => (
-            <div 
-              key={b.id} 
-              onClick={e => { if(isDev) { e.stopPropagation(); onSelectBlock(b.id); } }} 
-              className={`${isDev ? 'cursor-edit hover:ring-2 hover:ring-blue-500 rounded-2xl p-2 transition-all relative group' : ''} ${b.position === 'fixed' ? 'fixed z-[100]' : ''}`}
-              style={{
-                ...(b.position === 'fixed' ? { top: b.posProps?.top, left: b.posProps?.left, right: b.posProps?.right, bottom: b.posProps?.bottom } : {}),
-                ...(b.extraStyles || {})
-              }}
-            >
-              {isDev && <Edit3 size={16} className="absolute -left-8 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 text-blue-500" />}
-              <HiddenWrapper block={b} onNavigate={onNavigate} isDev={isDev} setGlobalCursor={setGlobalCursor}>
-                <BlockRenderer block={b} />
-              </HiddenWrapper>
+        {/* Dynamic Content Container */}
+        <div className="p-12 pb-24">
+          {notif && (
+            <div className="fixed top-32 right-12 bg-slate-900 text-white px-8 py-5 rounded-3xl shadow-2xl flex items-center gap-4 animate-in fade-in slide-in-from-right-8 z-[100] border border-white/10 font-bold text-sm">
+              <CheckCircle2 size={20} className="text-emerald-400" /> {notif}
             </div>
-          ))}
+          )}
+
+          {view === 'status' && (
+            <div className="space-y-12 animate-in fade-in slide-in-from-bottom-6 duration-700">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">
+                <StatCard label="En Uso" val={data.inventory.filter(i => i.status === 'in_use').length} color="bg-amber-500" icon={<History/>} />
+                <StatCard label="Libres" val={data.inventory.filter(i => i.status === 'available').length} color="bg-emerald-500" icon={<CheckCircle2/>} />
+                <StatCard label="En Taller" val={data.inventory.filter(i => i.status?.includes('maint')).length} color="bg-slate-400" icon={<Wrench/>} />
+                <StatCard label="Visitas" val={data.loans.length} color="bg-indigo-600" icon={<Users/>} />
+              </div>
+              
+              <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
+                 <div className="xl:col-span-2 bg-white p-12 rounded-[3.5rem] border border-slate-100 shadow-sm flex flex-col h-[500px]">
+                    <h4 className="text-slate-300 font-black text-xs uppercase tracking-widest mb-10">Estado del Taller de Mantenimiento</h4>
+                    <div className="flex-1 flex items-end gap-10">
+                       <MaintBar label="Pendientes" val={data.inventory.filter(i=>i.status==='maint_pending').length} max={data.inventory.length} color="bg-slate-200" />
+                       <MaintBar label="Reparación" val={data.inventory.filter(i=>i.status==='maint_repair').length} max={data.inventory.length} color="bg-red-400" />
+                       <MaintBar label="Repuestos" val={data.inventory.filter(i=>i.status==='maint_waiting').length} max={data.inventory.length} color="bg-amber-400" />
+                       <MaintBar label="Control QC" val={data.inventory.filter(i=>i.status==='maint_qc').length} max={data.inventory.length} color="bg-indigo-400" />
+                    </div>
+                 </div>
+                 <div className="bg-slate-900 p-10 rounded-[3.5rem] text-white flex flex-col shadow-2xl relative overflow-hidden">
+                    <div className="absolute top-0 right-0 p-10 opacity-10"><BarChart3 size={120}/></div>
+                    <h4 className="text-indigo-400 font-black text-xs uppercase tracking-widest mb-8">Últimas Visitas</h4>
+                    <div className="flex-1 space-y-5 relative">
+                      {data.loans.slice(-4).reverse().map(l => (
+                        <div key={l.id} className="flex items-center justify-between p-4 bg-white/5 rounded-2xl border border-white/5 group hover:bg-white/10 transition-all">
+                          <div>
+                            <p className="text-sm font-black">{l.equipmentId}</p>
+                            <p className="text-[10px] text-slate-500 uppercase">{l.entityType}</p>
+                          </div>
+                          <span className={`px-2 py-1 rounded-lg text-[9px] font-black uppercase ${l.returned ? 'text-emerald-400' : 'text-amber-400 animate-pulse'}`}>
+                            {l.returned ? 'Devuelto' : 'Activo'}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                 </div>
+              </div>
+            </div>
+          )}
+
+          {view === 'inventory' && (
+            <div className="bg-white rounded-[3.5rem] border border-slate-100 overflow-hidden shadow-sm animate-in fade-in duration-500">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left min-w-[800px]">
+                  <thead className="bg-slate-50/50">
+                    <tr>
+                      <th className="px-10 py-8 text-[10px] font-black text-slate-400 uppercase tracking-widest">Activo</th>
+                      <th className="px-10 py-8 text-[10px] font-black text-slate-400 uppercase tracking-widest">Barcode</th>
+                      <th className="px-10 py-8 text-[10px] font-black text-slate-400 uppercase tracking-widest">Estado</th>
+                      <th className="px-10 py-8 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Panel de Control</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-50">
+                    {data.inventory.map(item => (
+                      <tr key={item.id} className="group hover:bg-slate-50 transition-all">
+                        <td className="px-10 py-8">
+                          <div className="flex items-center gap-4">
+                            <div className={`p-4 rounded-3xl ${item.status === 'in_use' ? 'bg-amber-100 text-amber-600' : 'bg-slate-100 text-slate-400'}`}>
+                              <Headphones size={24}/>
+                            </div>
+                            <div>
+                              <p className="font-black text-slate-900 text-lg leading-none mb-1">{item.id}</p>
+                              <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">{item.model}</p>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-10 py-8 font-mono text-sm text-slate-500 font-bold">{item.barcode}</td>
+                        <td className="px-10 py-8"><StatusBadge status={item.status} /></td>
+                        <td className="px-10 py-8 text-right space-x-3">
+                          <button onClick={() => setModal({ type: 'equipment_details', item })} className="p-4 text-slate-400 hover:text-slate-900 bg-white border border-slate-200 rounded-2xl shadow-sm hover:shadow-md transition-all" title="Ver Detalles/Mantenimiento">
+                            <FileText size={20}/>
+                          </button>
+                          {item.status === 'available' ? (
+                            <button onClick={() => setModal({ type: 'assign_choice', item })} className="bg-indigo-600 text-white px-8 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:scale-105 transition-all shadow-lg shadow-indigo-100">Entregar</button>
+                          ) : item.status === 'in_use' ? (
+                            <button onClick={() => handleReceive(item.id)} className="bg-emerald-600 text-white px-8 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:scale-105 transition-all shadow-lg shadow-emerald-100">Recibir</button>
+                          ) : (
+                             <button onClick={() => setModal({ type: 'equipment_details', item })} className="bg-slate-800 text-white px-8 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:scale-105 transition-all">En Taller</button>
+                          )}
+                          {userRole === 'admin' && (
+                            <button onClick={() => setModal({ type: 'inventory_crud', item })} className="p-4 text-slate-300 hover:text-indigo-600 transition-colors"><Edit2 size={18}/></button>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {view === 'visitors' && (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 animate-in fade-in duration-500">
+              {data.visitors.map(v => (
+                <div key={v.id} className="bg-white p-10 rounded-[3.5rem] border border-slate-100 shadow-sm hover:shadow-2xl transition-all flex flex-col gap-8 group">
+                  <div className="flex items-center justify-between">
+                    <div className="w-20 h-20 bg-indigo-50 text-indigo-600 rounded-[2rem] flex items-center justify-center font-black text-3xl border-4 border-white shadow-inner">
+                      {v.name.charAt(0)}
+                    </div>
+                    <div className="flex gap-2">
+                       <button onClick={() => setModal({ type: 'visitors_crud', item: v })} className="p-3 text-slate-300 hover:text-indigo-600 transition-colors"><Edit2 size={20}/></button>
+                       <button onClick={() => handleDelete('visitors', v.id)} className="p-3 text-slate-300 hover:text-red-500 transition-colors"><Trash2 size={20}/></button>
+                    </div>
+                  </div>
+                  <div>
+                    <p className="font-black text-slate-900 text-2xl tracking-tighter mb-1 group-hover:text-indigo-600 transition-colors leading-none">{v.name}</p>
+                    <div className="flex items-center gap-3 text-slate-400 font-bold text-[10px] uppercase tracking-[0.2em]">
+                       <Globe size={14}/> {v.country} • {v.age} AÑOS
+                    </div>
+                  </div>
+                  <button onClick={() => setModal({ type: 'assign_flow', visitor: v })} className="w-full bg-slate-900 text-white py-5 rounded-3xl transition-all font-black text-xs uppercase tracking-widest flex items-center justify-center gap-3 hover:bg-indigo-600 shadow-xl shadow-slate-200">
+                    <Plus size={20}/> Entregar Equipo
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {view === 'guides' && (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+              {data.guides.map(g => (
+                <div key={g.id} className="bg-white p-10 rounded-[3.5rem] border border-slate-100 shadow-sm flex flex-col gap-8 group relative overflow-hidden">
+                  <div className="absolute -top-4 -right-4 text-slate-50 opacity-0 group-hover:opacity-100 transition-opacity"><Briefcase size={120}/></div>
+                  <div className="flex items-center justify-between relative">
+                    <div className="p-5 bg-amber-50 text-amber-600 rounded-[2rem]"><Briefcase size={32}/></div>
+                    {userRole === 'admin' && (
+                       <div className="flex gap-1">
+                          <button onClick={() => setModal({ type: 'guides_crud', item: g })} className="p-2 text-slate-300 hover:text-amber-600"><Edit2 size={16}/></button>
+                          <button onClick={() => handleDelete('guides', g.id)} className="p-2 text-slate-300 hover:text-red-500"><Trash2 size={16}/></button>
+                       </div>
+                    )}
+                  </div>
+                  <div>
+                    <h3 className="text-2xl font-black tracking-tighter text-slate-900 leading-none mb-2 uppercase">{g.name}</h3>
+                    <p className="text-[10px] font-black text-amber-600 uppercase tracking-widest">{g.license}</p>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                     <div className="bg-slate-50 p-5 rounded-3xl">
+                        <p className="text-3xl font-black text-slate-900 leading-none mb-1">{g.daysWorked}</p>
+                        <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Días Trabajados</p>
+                     </div>
+                     <div className="bg-slate-50 p-5 rounded-3xl">
+                        <p className="text-3xl font-black text-slate-900 leading-none mb-1">{data.loans.filter(l => l.entityId === g.id && !l.returned).length}</p>
+                        <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Equipos Activos</p>
+                     </div>
+                  </div>
+                  <button onClick={() => setModal({ type: 'assign_flow_guide', guide: g })} className="w-full bg-amber-600 text-white py-5 rounded-3xl font-black text-xs uppercase tracking-widest shadow-xl shadow-amber-100 hover:bg-amber-700 transition-all flex items-center justify-center gap-3">
+                    <Plus size={20}/> Asignar Equipos
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {view === 'settings' && (
+             <div className="max-w-3xl bg-white rounded-[4rem] p-12 shadow-sm border border-slate-100 animate-in fade-in duration-500 mx-auto">
+                <h3 className="text-2xl font-black mb-10 tracking-tighter uppercase text-slate-900 flex items-center gap-4"><Settings2 className="text-indigo-600"/> Configuración del Sistema</h3>
+                <div className="space-y-10">
+                   <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
+                      <div>
+                         <label className="block text-[10px] font-black text-slate-300 uppercase tracking-widest mb-4">Logo Corporativo</label>
+                         <div className="p-6 bg-slate-50 rounded-3xl border-2 border-dashed border-slate-100 flex items-center justify-center mb-4">
+                            <img src={data.settings.logo} className="h-24 object-contain" />
+                         </div>
+                         <input type="text" className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl text-xs font-mono" value={data.settings.logo} onChange={(e)=>updateData({...data, settings:{...data.settings, logo: e.target.value}})} />
+                      </div>
+                      <div className="space-y-6">
+                         <InputField label="Nombre de Aplicación" value={data.settings.appName} onChange={(e)=>updateData({...data, settings:{...data.settings, appName: e.target.value}})} />
+                         <div className="pt-4">
+                            <label className="block text-[10px] font-black text-slate-300 uppercase tracking-widest mb-4">Mantenimiento de Datos</label>
+                            <button onClick={()=>{
+                               const blob = new Blob([JSON.stringify(data, null, 2)], {type: 'application/json'});
+                               const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download='audiopro_v4_full_backup.json'; a.click();
+                            }} className="w-full flex items-center justify-between p-5 bg-slate-900 text-white rounded-3xl font-black text-xs uppercase tracking-widest hover:bg-indigo-600 transition-all">
+                               Descargar Backup <Download size={18}/>
+                            </button>
+                         </div>
+                      </div>
+                   </div>
+                   <div>
+                      <label className="block text-[10px] font-black text-slate-300 uppercase tracking-widest mb-4">Términos del Contrato (Recibos)</label>
+                      <textarea className="w-full h-40 p-6 bg-slate-50 border border-slate-100 rounded-[2.5rem] text-sm leading-relaxed outline-none focus:border-indigo-600 transition-all" value={data.settings.terms} onChange={(e)=>updateData({...data, settings:{...data.settings, terms: e.target.value}})} />
+                   </div>
+                   <button onClick={()=>triggerNotif("Configuración Global Guardada")} className="w-full bg-emerald-500 text-white py-5 rounded-3xl font-black text-sm uppercase tracking-widest shadow-2xl shadow-emerald-100 hover:bg-emerald-600 transition-all">Guardar Cambios</button>
+                </div>
+             </div>
+          )}
+
+          {view === 'stats' && (
+             <div className="space-y-12 animate-in fade-in">
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
+                   <div className="bg-white p-12 rounded-[4rem] border border-slate-100 shadow-sm">
+                      <h4 className="text-[10px] font-black text-slate-300 uppercase tracking-widest mb-10">Demografía de Visitantes</h4>
+                      <div className="space-y-8">
+                         <StatBarMini label="Nacionales (España)" val={data.visitors.filter(v=>v.country==='España').length} total={data.visitors.length} color="bg-indigo-600" />
+                         <StatBarMini label="Internacionales" val={data.visitors.filter(v=>v.country!=='España').length} total={data.visitors.length} color="bg-emerald-500" />
+                         <StatBarMini label="Visitantes Adultos (>18)" val={data.visitors.filter(v=>v.age>=18).length} total={data.visitors.length} color="bg-amber-500" />
+                      </div>
+                   </div>
+                   <div className="bg-slate-900 p-12 rounded-[4rem] text-white flex flex-col justify-center items-center text-center relative overflow-hidden">
+                      <div className="absolute top-0 left-0 w-full h-full opacity-10 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-indigo-500 to-transparent" />
+                      <div className="p-6 bg-white/10 rounded-[2.5rem] mb-6"><ShieldCheck size={48} className="text-emerald-400"/></div>
+                      <h3 className="text-3xl font-black uppercase tracking-tighter mb-2">Seguridad de Activos</h3>
+                      <p className="text-slate-400 text-sm max-w-xs font-bold">Tienes un total de {data.inventory.length} equipos bajo control estricto.</p>
+                      <div className="mt-8 text-6xl font-black tracking-tighter">{((data.inventory.filter(i=>i.status==='available').length / data.inventory.length)*100).toFixed(0)}%</div>
+                      <p className="text-[10px] font-black text-indigo-400 uppercase tracking-widest mt-2">Disponibilidad de Flota</p>
+                   </div>
+                </div>
+             </div>
+          )}
         </div>
+      </main>
 
-        <footer onClick={onFooterClick} className="mt-60 py-24 border-t-2 border-current/10 text-center opacity-20 hover:opacity-100 transition-all cursor-pointer relative">
-          <div className="text-[10px] font-black uppercase tracking-[0.6em] select-none">© DANIELA • LOS DOS MUNDOS</div>
-          {msg && <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-full bg-blue-600 text-white px-8 py-3 rounded-full text-[10px] font-black animate-bounce shadow-2xl border-2 border-white/20 whitespace-nowrap">{msg}</div>}
-        </footer>
-      </div>
-    </div>
-  );
-}
+      {/* --- MODALES DINÁMICOS --- */}
 
-function HiddenWrapper({ block, children, onNavigate, isDev, setGlobalCursor }: any) {
-  const [revealed, setRevealed] = useState(false);
-  const [clicks, setClicks] = useState(0);
-  const [inputText, setInputText] = useState("");
-  const timer = useRef<any>(null);
+      {(modal?.type === 'visitors_crud' || modal?.type === 'guides_crud' || modal?.type === 'inventory_crud') && (
+        <Modal title={modal.item ? "Editar Registro" : "Nuevo Registro"} onClose={() => setModal(null)}>
+          <form onSubmit={(e) => handleEntityCRUD(e, modal.type.split('_')[0], modal.item?.id)} className="grid grid-cols-2 gap-6">
+            {modal.type === 'visitors_crud' && (
+              <>
+                <div className="col-span-2"><InputField label="Nombre Completo" name="name" defaultValue={modal.item?.name} required /></div>
+                <InputField label="Documento" name="document" defaultValue={modal.item?.document} required />
+                <InputField label="País" name="country" defaultValue={modal.item?.country || 'España'} required />
+                <InputField label="Edad" name="age" type="number" defaultValue={modal.item?.age || 25} required />
+                <InputField label="Email" name="email" type="email" defaultValue={modal.item?.email} />
+              </>
+            )}
+            {modal.type === 'guides_crud' && (
+              <>
+                <div className="col-span-2"><InputField label="Nombre del Guía" name="name" defaultValue={modal.item?.name} required /></div>
+                <InputField label="Licencia" name="license" defaultValue={modal.item?.license} required />
+                <InputField label="Teléfono" name="phone" defaultValue={modal.item?.phone} required />
+                <InputField label="Días Laborados" name="daysWorked" type="number" defaultValue={modal.item?.daysWorked || 0} required />
+              </>
+            )}
+            {modal.type === 'inventory_crud' && (
+              <>
+                <InputField label="ID de Equipo (Ej: AG-00X)" name="id" defaultValue={modal.item?.id} disabled={!!modal.item} required />
+                <InputField label="Código de Barras" name="barcode" defaultValue={modal.item?.barcode} required />
+                <div className="col-span-2"><InputField label="Modelo / Tipo" name="model" defaultValue={modal.item?.model || 'Standard'} required /></div>
+              </>
+            )}
+            <div className="col-span-2 pt-8">
+              <button className="w-full bg-slate-900 text-white py-6 rounded-[2rem] font-black text-sm uppercase tracking-widest shadow-2xl shadow-slate-200">Guardar Información</button>
+            </div>
+          </form>
+        </Modal>
+      )}
 
-  const executeAction = () => {
-    setRevealed(true);
-    if (block.actionResult === 'navigate' && block.clueLink) onNavigate(block.clueLink);
-    if (block.actionResult === 'cursor' && block.mouseIcon) setGlobalCursor(block.mouseIcon);
-    if (block.actionResult === 'audio' && block.audioUrl) {
-      const audio = new Audio(block.audioUrl);
-      audio.play().catch(e => console.log("Error al reproducir audio:", e));
-    }
-  };
+      {modal?.type === 'equipment_details' && (
+        <Modal title={`Hoja de Vida: ${modal.item.id}`} onClose={() => setModal(null)}>
+           <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
+              <div className="space-y-8">
+                 <div className="bg-slate-50 p-8 rounded-[3rem] border border-slate-100 shadow-inner">
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-6 flex items-center gap-2"><Settings size={16}/> Cambiar Estado Operativo</p>
+                    <div className="grid grid-cols-2 gap-3">
+                       <MaintStateBtn active={modal.item.status === 'available'} color="bg-emerald-500" label="Disponible" onClick={()=> {
+                          const newInv = data.inventory.map(i=>i.id===modal.item.id ? {...i, status:'available'} : i);
+                          updateData({...data, inventory: newInv});
+                          setModal({...modal, item: newInv.find(i=>i.id===modal.item.id)});
+                       }} />
+                       <MaintStateBtn active={modal.item.status === 'maint_pending'} color="bg-slate-400" label="En Cola" onClick={()=> {
+                          const newInv = data.inventory.map(i=>i.id===modal.item.id ? {...i, status:'maint_pending'} : i);
+                          updateData({...data, inventory: newInv});
+                          setModal({...modal, item: newInv.find(i=>i.id===modal.item.id)});
+                       }} />
+                       <MaintStateBtn active={modal.item.status === 'maint_repair'} color="bg-red-500" label="Reparando" onClick={()=> {
+                          const newInv = data.inventory.map(i=>i.id===modal.item.id ? {...i, status:'maint_repair'} : i);
+                          updateData({...data, inventory: newInv});
+                          setModal({...modal, item: newInv.find(i=>i.id===modal.item.id)});
+                       }} />
+                       <MaintStateBtn active={modal.item.status === 'maint_waiting'} color="bg-amber-500" label="Repuestos" onClick={()=> {
+                          const newInv = data.inventory.map(i=>i.id===modal.item.id ? {...i, status:'maint_waiting'} : i);
+                          updateData({...data, inventory: newInv});
+                          setModal({...modal, item: newInv.find(i=>i.id===modal.item.id)});
+                       }} />
+                       <MaintStateBtn active={modal.item.status === 'maint_qc'} color="bg-indigo-500" label="Control QC" onClick={()=> {
+                          const newInv = data.inventory.map(i=>i.id===modal.item.id ? {...i, status:'maint_qc'} : i);
+                          updateData({...data, inventory: newInv});
+                          setModal({...modal, item: newInv.find(i=>i.id===modal.item.id)});
+                       }} />
+                    </div>
+                 </div>
 
-  const onEnter = () => { 
-    if(isDev) return; 
-    if(block.actionType === 'hover') executeAction(); 
-    if(block.actionType === 'long-hover') timer.current = setTimeout(executeAction, 3000); 
-  };
+                 <div className="bg-white p-8 rounded-[3rem] border border-slate-100">
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-6 flex items-center gap-2"><History size={16}/> Historial de Préstamos</p>
+                    <div className="space-y-4 max-h-48 overflow-y-auto custom-scrollbar pr-2 text-left">
+                       {data.loans.filter(l => l.equipmentId === modal.item.id).length === 0 ? <p className="text-xs text-slate-300 italic">Sin actividad registrada.</p> : 
+                         data.loans.filter(l => l.equipmentId === modal.item.id).reverse().map(l => (
+                           <div key={l.id} className="text-[11px] font-bold p-4 bg-slate-50 rounded-2xl flex justify-between">
+                              <span className="text-slate-800">{l.entityType === 'visitor' ? 'VIS' : 'GUÍA'}: {data[l.entityType === 'visitor' ? 'visitors' : 'guides'].find(e => e.id === l.entityId)?.name || 'N/A'}</span>
+                              <span className="text-slate-400">{new Date(l.timestamp).toLocaleDateString()}</span>
+                           </div>
+                         ))
+                       }
+                    </div>
+                 </div>
+              </div>
 
-  const onLeave = () => { 
-    if(isDev) return; 
-    if(block.actionType === 'hover' || block.actionType === 'long-hover') { setRevealed(false); clearTimeout(timer.current); }
-    if(block.actionResult === 'cursor') setGlobalCursor(null);
-  };
-
-  const onClick = () => { 
-    if(isDev) return; 
-    const n = clicks + 1;
-    if(block.actionType === 'click') executeAction();
-    if(block.actionType === 'double-click' && n === 2) { executeAction(); setClicks(0); }
-    if(block.actionType === 'triple-click' && n === 3) { executeAction(); setClicks(0); }
-    setClicks(n);
-    setTimeout(() => setClicks(0), 500); 
-  };
-
-  return (
-    <div onMouseEnter={onEnter} onMouseLeave={onLeave} onClick={onClick} className="relative transition-all duration-500 h-full w-full">
-      <div className={`${revealed && (block.actionResult === 'discover' || block.actionResult === 'navigate') ? 'opacity-10 blur-xl pointer-events-none scale-95' : 'transition-all duration-700'}`}>
-        {revealed && block.actionResult === 'replace' && block.subBlock ? (
-           <div className="animate-in fade-in zoom-in duration-500">
-              <BlockRenderer block={block.subBlock} />
+              <div className="flex flex-col h-full">
+                 <div className="flex-1 bg-white p-10 rounded-[3rem] border-2 border-slate-100 flex flex-col">
+                    <p className="text-[10px] font-black text-slate-400 uppercase mb-8 tracking-widest flex items-center gap-2"><Hammer size={16}/> Registro Técnico de Taller</p>
+                    <div className="flex-1 space-y-4 mb-8 overflow-y-auto custom-scrollbar pr-2">
+                       {modal.item.maintenanceLogs.map((log) => (
+                         <div key={log.id} className="text-xs bg-slate-50 p-5 rounded-2xl border border-slate-100 relative text-left">
+                            <span className="absolute -top-2 left-4 px-2 bg-white text-[9px] font-black text-slate-300 rounded border border-slate-50">{log.date}</span>
+                            <p className="font-bold text-slate-700 leading-relaxed">{log.notes}</p>
+                         </div>
+                       ))}
+                       {modal.item.maintenanceLogs.length === 0 && <p className="text-xs text-slate-300 text-center py-10">Sin reportes técnicos.</p>}
+                    </div>
+                    <div className="flex gap-3">
+                       <textarea id="maint-input" placeholder="Nueva anotación técnica..." className="flex-1 p-5 bg-slate-50 rounded-3xl border border-slate-100 text-sm outline-none focus:border-indigo-600 transition-all" />
+                       <button onClick={() => {
+                         const note = document.getElementById('maint-input').value;
+                         if (!note) return;
+                         const newInv = data.inventory.map(item => item.id === modal.item.id ? { ...item, maintenanceLogs: [...item.maintenanceLogs, { id: Date.now(), date: new Date().toISOString().split('T')[0], notes: note, statusAtTime: item.status }] } : item);
+                         updateData({ ...data, inventory: newInv });
+                         setModal({ ...modal, item: newInv.find(i => i.id === modal.item.id) });
+                         document.getElementById('maint-input').value = "";
+                       }} className="bg-slate-900 text-white p-5 rounded-3xl hover:bg-indigo-600 transition-all shadow-lg"><Plus size={24}/></button>
+                    </div>
+                 </div>
+              </div>
            </div>
-        ) : children}
-        
-        {block.actionType === 'input-match' && !revealed && !isDev && (
-          <div className="mt-4 flex gap-2">
-             <input value={inputText} onChange={e => setInputText(e.target.value)} placeholder="Clave..." className="border-b border-black text-xs p-1 outline-none bg-transparent" />
-             <button onClick={(e) => { e.stopPropagation(); if(inputText.toLowerCase() === block.triggerValue?.toLowerCase()) executeAction(); }} className="p-1"><Check size={14}/></button>
-          </div>
-        )}
-      </div>
-
-      {revealed && block.actionResult === 'appear' && block.subBlock && (
-        <div className={`animate-in fade-in duration-500 ${block.subBlock.position === 'fixed' ? 'fixed z-[110]' : 'mt-6'}`}
-             style={{
-               ...(block.subBlock.position === 'fixed' ? { top: block.subBlock.posProps?.top, left: block.subBlock.posProps?.left } : {}),
-               ...(block.subBlock.extraStyles || {})
-             }}>
-           <BlockRenderer block={block.subBlock} />
-        </div>
+        </Modal>
       )}
 
-      {revealed && block.actionResult === 'discover' && block.clueLink && !isDev && (
-        <div className="absolute inset-0 flex items-center justify-center animate-in zoom-in fade-in duration-500 z-50">
-           <button onClick={(e) => { e.stopPropagation(); onNavigate(block.clueLink); }} className="bg-black text-white px-10 py-5 rounded-full font-black uppercase text-xs tracking-widest shadow-2xl flex items-center gap-3 border border-white/20 transition-all hover:scale-110">
-              {block.clueLink.startsWith('http') ? <ExternalLink size={16}/> : <Share2 size={16}/>} DESCUBRIR
-           </button>
-        </div>
+      {modal?.type === 'assign_flow' && (
+        <Modal title={`Entrega a ${modal.visitor.name}`} onClose={() => setModal(null)}>
+          <form onSubmit={(e) => handleAssignLoan(e, modal.visitor, 'visitor')} className="space-y-8">
+            <div className="p-12 bg-indigo-50 rounded-[4rem] border-4 border-white shadow-2xl flex flex-col items-center gap-10">
+              <div className="w-24 h-24 bg-white rounded-[2rem] flex items-center justify-center text-indigo-600 shadow-xl scale-125"><Camera size={48} /></div>
+              <div className="w-full text-center">
+                <p className="text-[12px] font-black text-indigo-400 uppercase tracking-[0.3em] mb-4">Ingresar Código de Audioguía</p>
+                <input name="barcode" autoFocus className="w-full bg-transparent text-center font-mono text-6xl font-black text-indigo-900 outline-none placeholder:opacity-10 uppercase tracking-tighter" placeholder="00000" required />
+              </div>
+            </div>
+            <button className="w-full bg-indigo-600 text-white py-6 rounded-[2.5rem] font-black text-sm uppercase tracking-widest shadow-2xl shadow-indigo-200 transition-all hover:scale-105 active:scale-95">Confirmar y Emitir Ticket</button>
+          </form>
+        </Modal>
+      )}
+
+      {modal?.type === 'assign_flow_guide' && (
+        <Modal title={`Asignar a Guía: ${modal.guide.name}`} onClose={() => setModal(null)}>
+          <form onSubmit={(e) => handleAssignLoan(e, modal.guide, 'guide')} className="space-y-8">
+            <div className="p-12 bg-amber-50 rounded-[4rem] border-4 border-white shadow-2xl flex flex-col items-center gap-10">
+              <div className="p-6 bg-white rounded-3xl text-amber-600 shadow-xl"><Headphones size={48} /></div>
+              <div className="w-full text-center">
+                <p className="text-[12px] font-black text-amber-500 uppercase tracking-[0.3em] mb-4">Escaneo de Equipo para Grupo</p>
+                <input name="barcode" autoFocus className="w-full bg-transparent text-center font-mono text-6xl font-black text-amber-900 outline-none placeholder:opacity-10 uppercase tracking-tighter" placeholder="00000" required />
+              </div>
+            </div>
+            <button className="w-full bg-amber-600 text-white py-6 rounded-[2.5rem] font-black text-sm uppercase tracking-widest shadow-2xl shadow-amber-200 transition-all hover:scale-105">Vincular a Responsabilidad de Guía</button>
+          </form>
+        </Modal>
+      )}
+
+      {modal?.type === 'assign_choice' && (
+        <Modal title="Seleccione Tipo de Préstamo" onClose={() => setModal(null)}>
+           <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
+              <button onClick={() => { setView('visitors'); setModal(null); }} className="p-14 rounded-[4rem] border-2 border-slate-100 hover:border-indigo-500 hover:bg-indigo-50 flex flex-col items-center gap-6 transition-all group shadow-sm hover:shadow-xl">
+                <div className="p-8 bg-slate-50 rounded-[2.5rem] group-hover:bg-indigo-100 group-hover:text-indigo-600 transition-colors shadow-sm"><Users size={64}/></div>
+                <span className="font-black text-sm text-slate-800 uppercase tracking-widest">A Visitante Individual</span>
+              </button>
+              <button onClick={() => { setView('guides'); setModal(null); }} className="p-14 rounded-[4rem] border-2 border-slate-100 hover:border-amber-500 hover:bg-amber-50 flex flex-col items-center gap-6 transition-all group shadow-sm hover:shadow-xl">
+                <div className="p-8 bg-slate-50 rounded-[2.5rem] group-hover:bg-amber-100 group-hover:text-amber-600 transition-colors shadow-sm"><Briefcase size={64}/></div>
+                <span className="font-black text-sm text-slate-800 uppercase tracking-widest">A Guía Autorizado</span>
+              </button>
+           </div>
+        </Modal>
       )}
     </div>
   );
 }
 
-function BlockRenderer({ block }: { block: Block }) {
-  const parseVideo = (url: string) => {
-    if (!url) return '';
-    if (url.includes('youtube.com') || url.includes('youtu.be')) return `https://www.youtube.com/embed/${url.split('v=')[1]?.split('&')[0] || url.split('/').pop()}`;
-    if (url.includes('tiktok.com')) return `https://www.tiktok.com/embed/v2/${url.split('/video/')[1]?.split('?')[0]}`;
-    return url;
+// --- SUBCOMPONENTES ESTILO ---
+
+const NavItem = ({ icon, label, active, onClick }) => (
+  <button onClick={onClick} className={`w-full flex items-center gap-4 p-5 rounded-[1.5rem] transition-all font-black text-xs uppercase tracking-[0.15em] ${active ? 'bg-indigo-600 text-white shadow-2xl shadow-indigo-900/40 translate-x-2' : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'}`}>
+    {React.cloneElement(icon, { size: 20, strokeWidth: 2.5 })} {label}
+  </button>
+);
+
+const StatCard = ({ label, val, color, icon }) => (
+  <div className="bg-white p-10 rounded-[3rem] border border-slate-100 shadow-sm relative overflow-hidden group hover:scale-[1.02] transition-all">
+    <div className={`absolute -top-4 -right-4 p-10 opacity-5 group-hover:opacity-10 transition-all ${color.replace('bg-', 'text-')}`}>{icon}</div>
+    <p className="text-6xl font-black text-slate-900 mb-2 tracking-tighter">{val}</p>
+    <div className="flex items-center gap-3">
+       <div className={`w-2 h-2 rounded-full ${color} shadow-[0_0_8px_rgba(0,0,0,0.1)]`} />
+       <p className="text-[10px] font-black text-slate-300 uppercase tracking-[0.2em]">{label}</p>
+    </div>
+  </div>
+);
+
+const StatusBadge = ({ status }) => {
+  const cfg = {
+    available: { label: 'Disponible', class: 'bg-emerald-50 text-emerald-700 border-emerald-100' },
+    in_use: { label: 'En Uso', class: 'bg-amber-50 text-amber-700 border-amber-100' },
+    maint_pending: { label: 'Cola Taller', class: 'bg-slate-100 text-slate-500 border-slate-200' },
+    maint_repair: { label: 'Reparando', class: 'bg-red-50 text-red-600 border-red-100' },
+    maint_waiting: { label: 'Repuestos', class: 'bg-orange-50 text-orange-600 border-orange-100' },
+    maint_qc: { label: 'Control QC', class: 'bg-indigo-50 text-indigo-700 border-indigo-100' }
   };
+  const c = cfg[status] || cfg.available;
+  return (
+    <span className={`px-5 py-2 rounded-2xl text-[9px] font-black border uppercase tracking-[0.15em] shadow-sm ${c.class}`}>
+      {c.label}
+    </span>
+  );
+};
 
-  const commonStyle = block.extraStyles || {};
+const RoleButton = ({ onClick, icon, label, desc, color }) => (
+  <button onClick={onClick} className={`w-full p-8 rounded-[2.5rem] border-2 flex items-center gap-8 transition-all group shadow-sm hover:shadow-2xl hover:-translate-y-1 ${color}`}>
+    <div className="p-5 bg-white/10 rounded-3xl transition-all group-hover:scale-110">
+       {React.cloneElement(icon, { size: 32 })}
+    </div>
+    <div className="text-left">
+       <p className="font-black text-xl tracking-tight uppercase leading-none mb-1">{label}</p>
+       <p className="text-xs font-bold opacity-60 italic">{desc}</p>
+    </div>
+  </button>
+);
 
-  switch(block.type) {
-    case 'text': return <p className="text-xl md:text-6xl leading-[1] tracking-tighter whitespace-pre-wrap" style={commonStyle}>{block.content}</p>;
-    case 'image': return <img src={block.content} className="w-full rounded-[2.5rem] shadow-2xl grayscale-[0.6] hover:grayscale-0 transition-all duration-1000" style={commonStyle} alt="Enigma" />;
-    case 'video': return <div className="aspect-video w-full rounded-[2.5rem] overflow-hidden shadow-2xl bg-black border-4 border-white/5" style={commonStyle}><iframe src={parseVideo(block.content)} title="Contenido" className="w-full h-full" allowFullScreen /></div>;
-    case 'html': return <div style={commonStyle} dangerouslySetInnerHTML={{ __html: block.content }} />;
-    default: return null;
-  }
-}
+const InputField = ({ label, ...props }) => (
+  <div className="w-full">
+    <label className="block text-[10px] font-black text-slate-300 uppercase tracking-[0.2em] mb-3 ml-3">{label}</label>
+    <input 
+      className="w-full p-6 rounded-3xl border border-slate-100 bg-slate-50/50 text-sm font-bold text-slate-700 outline-none focus:border-indigo-600 focus:bg-white transition-all shadow-inner" 
+      {...props} 
+    />
+  </div>
+);
+
+const MaintBar = ({ label, val, max, color }) => {
+  const pct = max > 0 ? (val / max) * 100 : 0;
+  return (
+    <div className="flex-1 flex flex-col items-center gap-4 group">
+       <div className="w-full h-full bg-slate-50 rounded-[2.5rem] relative flex items-end overflow-hidden border border-slate-100">
+          <div className={`w-full transition-all duration-1000 ease-out ${color} border-t border-white/20`} style={{ height: `${pct}%` }}>
+             <div className="absolute top-2 w-full text-center text-[10px] font-black opacity-0 group-hover:opacity-100 transition-opacity">
+                {val}
+             </div>
+          </div>
+       </div>
+       <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest text-center leading-tight">{label}</span>
+    </div>
+  );
+};
+
+const StatBarMini = ({ label, val, total, color }) => {
+  const pct = total > 0 ? (val / total) * 100 : 0;
+  return (
+    <div className="space-y-3">
+       <div className="flex justify-between text-[10px] font-black uppercase tracking-widest text-slate-400">
+          <span>{label}</span>
+          <span className="text-slate-900">{val} / {total}</span>
+       </div>
+       <div className="w-full h-3.5 bg-slate-50 rounded-full overflow-hidden border border-slate-100">
+          <div className={`h-full transition-all duration-1000 shadow-inner ${color}`} style={{ width: `${pct}%` }} />
+       </div>
+    </div>
+  );
+};
+
+const MaintStateBtn = ({ active, color, label, onClick }) => (
+  <button onClick={onClick} className={`p-4 rounded-2xl border-2 transition-all text-left flex flex-col gap-1 ${active ? `${color} text-white border-transparent shadow-lg shadow-slate-200` : 'bg-white border-slate-100 text-slate-400 hover:border-slate-300'}`}>
+     <span className={`w-3 h-3 rounded-full ${active ? 'bg-white' : color} mb-2`} />
+     <span className="text-[10px] font-black uppercase tracking-widest leading-none">{label}</span>
+  </button>
+);
